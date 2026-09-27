@@ -64,6 +64,21 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const verify2FA = async (email, code) => {
+    const response = await fetch(`${API_URL}/auth/verify-2fa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.msg || 'Verification failed');
+
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    const meData = await fetchCommunityMe(data.token);
+    return meData;
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -85,6 +100,7 @@ export function AuthProvider({ children }) {
     isSubscribed,
     loading,
     login,
+    verify2FA,
     logout,
     refreshProfile,
     API_URL

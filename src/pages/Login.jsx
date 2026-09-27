@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, Key, ShieldAlert, ArrowRight } from 'lucide-react';
+import { Lock, Mail, Key, ShieldAlert, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
-  const { login, isSubscribed } = useAuth();
+  const { login, verify2FA } = useAuth();
   const navigate = useNavigate();
+
+  const [step, setStep] = useState(1); // 1: Email/Password, 2: 2FA Code
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState(null);
   const [subRequiredError, setSubRequiredError] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -19,16 +22,39 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const user = await login(email, password);
-      // Check active subscription
-      const hasSub = user.activePlans && Array.isArray(user.activePlans) && user.activePlans.some(p => !p.expiryDate || new Date(p.expiryDate) > new Date());
-      if (!hasSub) {
-        setSubRequiredError(true);
+      const res = await login(email, password);
+      if (res && res.requires2FA) {
+        setStep(2);
       } else {
-        navigate('/members');
+        const hasSub = res && res.activePlans && Array.isArray(res.activePlans) && res.activePlans.some(p => !p.expiryDate || new Date(p.expiryDate) > new Date());
+        if (!hasSub) {
+          setSubRequiredError(true);
+        } else {
+          navigate('/members');
+        }
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubRequiredError(false);
+    setLoading(true);
+
+    try {
+      const meData = await verify2FA(email, code);
+      if (meData && meData.isSubscribed) {
+        navigate('/members');
+      } else {
+        setSubRequiredError(true);
+      }
+    } catch (err) {
+      setError(err.message || 'Verification failed. Invalid code.');
     } finally {
       setLoading(false);
     }
@@ -58,9 +84,13 @@ export default function Login() {
             fontSize: '1.8rem',
             fontWeight: 800,
             marginBottom: '8px'
-          }}>Space Community Login</h2>
+          }}>
+            {step === 1 ? 'Space Community Login' : '2FA Security Check'}
+          </h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            Use your Interplanetary TV account credentials to enter the exclusive network.
+            {step === 1 
+              ? 'Use your Interplanetary TV account credentials to enter the exclusive network.'
+              : `Enter the 6-digit verification code sent to ${email}`}
           </p>
         </div>
 
@@ -104,7 +134,7 @@ export default function Login() {
           </div>
         )}
 
-        {!subRequiredError && (
+        {!subRequiredError && step === 1 && (
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label><Mail size={14} style={{ display: 'inline', marginRight: 6 }} /> Email Address</label>
@@ -140,6 +170,43 @@ export default function Login() {
             </button>
           </form>
         )}
+
+        {!subRequiredError && step === 2 && (
+          <form onSubmit={handleVerify}>
+            <div className="form-group">
+              <label><ShieldCheck size={14} style={{ display: 'inline', marginRight: 6 }} /> 6-Digit Code</label>
+              <input 
+                type="text"
+                required
+                maxLength={6}
+                className="form-input"
+                style={{ letterSpacing: '4px', textAlign: 'center', fontSize: '1.2rem', fontWeight: 800 }}
+                placeholder="123456"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={loading} 
+              className="btn-primary" 
+              style={{ width: '100%', marginTop: '10px' }}
+            >
+              {loading ? 'Verifying Code...' : 'Verify & Enter Community'}
+            </button>
+
+            <button 
+              type="button" 
+              className="btn-secondary" 
+              style={{ width: '100%', marginTop: '10px', fontSize: '0.85rem' }}
+              onClick={() => setStep(1)}
+            >
+              Back to Login
+            </button>
+          </form>
+        )}
+
       </div>
     </div>
   );
