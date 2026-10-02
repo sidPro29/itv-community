@@ -706,37 +706,204 @@ export default function ProfileBuilder() {
             </div>
           </div>
 
-          {/* Section 3: LinkedIn & Career Links */}
+          {/* Section 3: LinkedIn & Custom Web Links */}
           <div className="glass-panel" style={{ padding: '30px' }}>
             <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <LinkIcon size={20} style={{ color: 'var(--accent-cyan)' }} /> 3. LinkedIn & Online Profiles
+              <LinkIcon size={20} style={{ color: 'var(--accent-cyan)' }} /> 3. LinkedIn & Custom Web Links
             </h4>
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: '20px' }}>
               <label>LinkedIn Profile URL *</label>
               <input type="url" className="form-input" value={linkedinUrl} onChange={(e) => setLinkedinUrl(e.target.value)} placeholder="https://linkedin.com/in/yourname" />
             </div>
-          </div>
 
-          {/* Section 4: Work Experience & Education */}
-          <div className="glass-panel" style={{ padding: '30px' }}>
-            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Briefcase size={20} style={{ color: 'var(--accent-cyan)' }} /> 4. Work Experience & Education
-            </h4>
-            {/* Experience List */}
-            <div style={{ marginBottom: '24px' }}>
-              <h5 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '12px', color: '#e2e8f0' }}>Work Experience</h5>
-              {workExperience.map((exp, idx) => (
-                <div key={idx} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-glass)', padding: '16px', borderRadius: '12px', marginBottom: '12px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <input type="text" className="form-input" placeholder="Company Name" value={exp.company} onChange={(e) => { const u = [...workExperience]; u[idx].company = e.target.value; setWorkExperience(u); }} />
-                    <input type="text" className="form-input" placeholder="Role / Title" value={exp.role} onChange={(e) => { const u = [...workExperience]; u[idx].role = e.target.value; setWorkExperience(u); }} />
-                  </div>
-                  <button className="btn-secondary" style={{ marginTop: '10px', fontSize: '0.8rem' }} onClick={() => setWorkExperience(workExperience.filter((_, i) => i !== idx))}>
-                    <Trash2 size={14} /> Remove
+            <div>
+              <label style={{ fontWeight: 600, display: 'block', marginBottom: '10px' }}>Additional Portfolio / Social Links</label>
+              {additionalLinks.map((link, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: '12px', marginBottom: '12px', alignItems: 'center' }}>
+                  <input type="text" className="form-input" placeholder="Label (e.g. Website / GitHub)" value={link.label} onChange={(e) => { const u = [...additionalLinks]; u[idx].label = e.target.value; setAdditionalLinks(u); }} />
+                  <input type="url" className="form-input" placeholder="URL (https://...)" value={link.url} onChange={(e) => { const u = [...additionalLinks]; u[idx].url = e.target.value; setAdditionalLinks(u); }} />
+                  <button className="btn-secondary" style={{ padding: '10px 14px', color: '#ff4d4d' }} onClick={() => setAdditionalLinks(additionalLinks.filter((_, i) => i !== idx))}>
+                    <Trash2 size={16} />
                   </button>
                 </div>
               ))}
-              <button className="btn-secondary" onClick={handleAddExp}><Plus size={16} /> Add Experience</button>
+              <button className="btn-secondary" onClick={handleAddLink} style={{ fontSize: '0.88rem' }}>
+                <Plus size={16} /> Add Custom Link
+              </button>
+            </div>
+          </div>
+
+          {/* Section 4: Work Experience */}
+          <div className="glass-panel" style={{ padding: '30px' }}>
+            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Briefcase size={20} style={{ color: 'var(--accent-cyan)' }} /> 4. Work Experience
+            </h4>
+            {workExperience.map((exp, idx) => (
+              <div key={idx} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-glass)', padding: '20px', borderRadius: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                  <div className="form-group">
+                    <label>Company / Organization Name</label>
+                    <input type="text" className="form-input" placeholder="e.g. ISRO / NASA / AgniKul Cosmos" value={exp.company} onChange={(e) => { const u = [...workExperience]; u[idx].company = e.target.value; setWorkExperience(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Role / Position Title</label>
+                    <input type="text" className="form-input" placeholder="e.g. Senior Propulsion Engineer" value={exp.role} onChange={(e) => { const u = [...workExperience]; u[idx].role = e.target.value; setWorkExperience(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Start Date</label>
+                    <input type="text" className="form-input" placeholder="e.g. Jan 2021" value={exp.startDate} onChange={(e) => { const u = [...workExperience]; u[idx].startDate = e.target.value; setWorkExperience(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>End Date</label>
+                    <input type="text" className="form-input" placeholder="e.g. Present / Dec 2023" value={exp.endDate} onChange={(e) => { const u = [...workExperience]; u[idx].endDate = e.target.value; setWorkExperience(u); }} />
+                  </div>
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Description & Key Achievements</label>
+                    <textarea className="form-textarea" rows={2} placeholder="Brief summary of duties, projects, or accomplishments..." value={exp.description} onChange={(e) => { const u = [...workExperience]; u[idx].description = e.target.value; setWorkExperience(u); }} />
+                  </div>
+                </div>
+                <button className="btn-secondary" style={{ color: '#ff4d4d', fontSize: '0.85rem' }} onClick={() => setWorkExperience(workExperience.filter((_, i) => i !== idx))}>
+                  <Trash2 size={14} /> Remove Experience
+                </button>
+              </div>
+            ))}
+            <button className="btn-secondary" onClick={handleAddExp} style={{ fontSize: '0.88rem' }}>
+              <Plus size={16} /> Add Work Experience
+            </button>
+          </div>
+
+          {/* Section 5: Education & Academic Credentials */}
+          <div className="glass-panel" style={{ padding: '30px' }}>
+            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <GraduationCap size={20} style={{ color: 'var(--accent-cyan)' }} /> 5. Education & Academic Degrees
+            </h4>
+            {education.map((edu, idx) => (
+              <div key={idx} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-glass)', padding: '20px', borderRadius: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                  <div className="form-group">
+                    <label>Institution / University</label>
+                    <input type="text" className="form-input" placeholder="e.g. IISc / MIT / IIT Madras" value={edu.institution} onChange={(e) => { const u = [...education]; u[idx].institution = e.target.value; setEducation(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Degree / Qualification</label>
+                    <input type="text" className="form-input" placeholder="e.g. M.Tech / Ph.D. / B.E." value={edu.degree} onChange={(e) => { const u = [...education]; u[idx].degree = e.target.value; setEducation(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Field of Study</label>
+                    <input type="text" className="form-input" placeholder="e.g. Aerospace Engineering" value={edu.fieldOfStudy} onChange={(e) => { const u = [...education]; u[idx].fieldOfStudy = e.target.value; setEducation(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Passout / Completion Year</label>
+                    <input type="text" className="form-input" placeholder="e.g. 2022" value={edu.endYear} onChange={(e) => { const u = [...education]; u[idx].endYear = e.target.value; setEducation(u); }} />
+                  </div>
+                </div>
+                <button className="btn-secondary" style={{ color: '#ff4d4d', fontSize: '0.85rem' }} onClick={() => setEducation(education.filter((_, i) => i !== idx))}>
+                  <Trash2 size={14} /> Remove Education
+                </button>
+              </div>
+            ))}
+            <button className="btn-secondary" onClick={handleAddEdu} style={{ fontSize: '0.88rem' }}>
+              <Plus size={16} /> Add Education
+            </button>
+          </div>
+
+          {/* Section 6: Skills & Area of Expertise */}
+          <div className="glass-panel" style={{ padding: '30px' }}>
+            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Award size={20} style={{ color: 'var(--accent-cyan)' }} /> 6. Skills & Area of Expertise
+            </h4>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+              <input 
+                type="text" 
+                className="form-input" 
+                placeholder="Type skill (e.g. Satellite Design, Orbital Mechanics, AI)..." 
+                value={skillInput} 
+                onChange={(e) => setSkillInput(e.target.value)} 
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddSkill(); } }}
+              />
+              <button className="btn-primary" onClick={handleAddSkill} style={{ padding: '0 20px', whiteSpace: 'nowrap' }}>
+                <Plus size={16} /> Add Skill
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {skills.map((skill, idx) => (
+                <span key={idx} style={{ background: 'rgba(0, 242, 254, 0.12)', border: '1px solid rgba(0, 242, 254, 0.3)', color: '#00f2fe', padding: '6px 14px', borderRadius: '16px', fontSize: '0.85rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                  {skill}
+                  <X size={14} style={{ cursor: 'pointer' }} onClick={() => handleRemoveSkill(skill)} />
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Section 7: Certificates & Credentials */}
+          <div className="glass-panel" style={{ padding: '30px' }}>
+            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Award size={20} style={{ color: 'var(--accent-cyan)' }} /> 7. Certificates & Credentials
+            </h4>
+            {certificates.map((cert, idx) => (
+              <div key={idx} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-glass)', padding: '20px', borderRadius: '16px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '12px' }}>
+                  <div className="form-group">
+                    <label>Certificate Title</label>
+                    <input type="text" className="form-input" placeholder="e.g. Space Systems Engineering Certification" value={cert.title} onChange={(e) => { const u = [...certificates]; u[idx].title = e.target.value; setCertificates(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Issuer / Organization</label>
+                    <input type="text" className="form-input" placeholder="e.g. ESA / NASA / IEEE" value={cert.issuer} onChange={(e) => { const u = [...certificates]; u[idx].issuer = e.target.value; setCertificates(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Issue Date</label>
+                    <input type="text" className="form-input" placeholder="e.g. May 2023" value={cert.issueDate} onChange={(e) => { const u = [...certificates]; u[idx].issueDate = e.target.value; setCertificates(u); }} />
+                  </div>
+                  <div className="form-group">
+                    <label>Certificate Document / Link (Upload or Enter URL)</label>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div style={{ position: 'relative', overflow: 'hidden', display: 'inline-block' }}>
+                        <button className="btn-secondary" style={{ fontSize: '0.8rem', padding: '8px 12px' }}>
+                          {uploadingCertIndex === idx ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload
+                        </button>
+                        <input type="file" accept="image/*,.pdf" onChange={(e) => handleCertFileUpload(e, idx)} style={{ position: 'absolute', left: 0, top: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                      </div>
+                      <input type="text" className="form-input" placeholder="https://..." value={cert.credentialUrl} onChange={(e) => { const u = [...certificates]; u[idx].credentialUrl = e.target.value; setCertificates(u); }} />
+                    </div>
+                  </div>
+                </div>
+                <button className="btn-secondary" style={{ color: '#ff4d4d', fontSize: '0.85rem' }} onClick={() => setCertificates(certificates.filter((_, i) => i !== idx))}>
+                  <Trash2 size={14} /> Remove Certificate
+                </button>
+              </div>
+            ))}
+            <button className="btn-secondary" onClick={handleAddCert} style={{ fontSize: '0.88rem' }}>
+              <Plus size={16} /> Add Certificate
+            </button>
+          </div>
+
+          {/* Section 8: Business Details (For Space Entrepreneurs & Executives) */}
+          <div className="glass-panel" style={{ padding: '30px' }}>
+            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Building size={20} style={{ color: 'var(--accent-cyan)' }} /> 8. Business & Company Details (Optional)
+            </h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="form-group">
+                <label>Company / Venture Name</label>
+                <input type="text" className="form-input" placeholder="e.g. OrbitX Technologies" value={businessDetails.companyName} onChange={(e) => setBusinessDetails({ ...businessDetails, companyName: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Designation / Title</label>
+                <input type="text" className="form-input" placeholder="e.g. Founder & CEO" value={businessDetails.designation} onChange={(e) => setBusinessDetails({ ...businessDetails, designation: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Company Website</label>
+                <input type="url" className="form-input" placeholder="https://orbitx.com" value={businessDetails.website} onChange={(e) => setBusinessDetails({ ...businessDetails, website: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Industry Sector</label>
+                <input type="text" className="form-input" placeholder="e.g. Launch Vehicles / Earth Observation" value={businessDetails.industry} onChange={(e) => setBusinessDetails({ ...businessDetails, industry: e.target.value })} />
+              </div>
+              <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                <label>Company / Project Overview</label>
+                <textarea className="form-textarea" rows={3} placeholder="Describe your venture's mission, technology, or space products..." value={businessDetails.description} onChange={(e) => setBusinessDetails({ ...businessDetails, description: e.target.value })} />
+              </div>
             </div>
           </div>
 
