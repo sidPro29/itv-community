@@ -28,9 +28,26 @@ export default function ProfileBuilder() {
 
   const [saving, setSaving] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [uploadingCertIndex, setUploadingCertIndex] = useState(null);
   const [uploadedDocName, setUploadedDocName] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const uploadFileToServer = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_URL}/upload`, {
+      method: 'POST',
+      headers: { 'x-auth-token': token },
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'File upload failed');
+    return data.url || `${API_URL}${data.relativeUrl}`;
+  };
 
   const handleIdFileUpload = async (e) => {
     const file = e.target.files[0];
@@ -40,26 +57,11 @@ export default function ProfileBuilder() {
     setErrorMsg('');
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        headers: {
-          'x-auth-token': token
-        },
-        body: formData
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'File upload failed');
-
-      const fileUrl = data.url || `${API_URL}${data.relativeUrl}`;
+      const fileUrl = await uploadFileToServer(file);
       setIdDocumentUrl(fileUrl);
       setUploadedDocName(file.name);
     } catch (err) {
-      setErrorMsg('File upload error: ' + err.message);
+      setErrorMsg('Govt ID upload error: ' + err.message);
     } finally {
       setUploadingDoc(false);
     }
@@ -69,21 +71,52 @@ export default function ProfileBuilder() {
     const file = e.target.files[0];
     if (!file) return;
 
+    setUploadingAvatar(true);
+    setErrorMsg('');
+
     try {
-      const formData = new FormData();
-      formData.append('image', file);
-      const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/upload`, {
-        method: 'POST',
-        headers: { 'x-auth-token': token },
-        body: formData
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        setAvatarUrl(data.url);
-      }
+      const fileUrl = await uploadFileToServer(file);
+      setAvatarUrl(fileUrl);
     } catch (err) {
-      console.error(err);
+      setErrorMsg('Avatar upload error: ' + err.message);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleCoverFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingCover(true);
+    setErrorMsg('');
+
+    try {
+      const fileUrl = await uploadFileToServer(file);
+      setCoverUrl(fileUrl);
+    } catch (err) {
+      setErrorMsg('Cover banner upload error: ' + err.message);
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleCertFileUpload = async (e, idx) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingCertIndex(idx);
+    setErrorMsg('');
+
+    try {
+      const fileUrl = await uploadFileToServer(file);
+      const updated = [...certificates];
+      updated[idx].credentialUrl = fileUrl;
+      setCertificates(updated);
+    } catch (err) {
+      setErrorMsg('Certificate file upload error: ' + err.message);
+    } finally {
+      setUploadingCertIndex(null);
     }
   };
 
@@ -288,14 +321,175 @@ export default function ProfileBuilder() {
               <textarea className="form-textarea" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Brief introduction about your passion, research, or business in the space sector..." />
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ gridColumn: 'span 2' }}>
               <label>Location / City, Country</label>
               <input type="text" className="form-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. Bengaluru, India / Houston, USA" />
             </div>
 
-            <div className="form-group">
-              <label>Profile Avatar Image URL</label>
-              <input type="text" className="form-input" value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://..." />
+            {/* Profile Avatar Image Field */}
+            <div className="form-group" style={{ gridColumn: 'span 2' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 600 }}>Profile Avatar Image (Upload from Computer or Enter Link)</span>
+                {avatarUrl && (
+                  <span style={{ color: '#38ef7d', fontSize: '0.8rem', fontWeight: 600 }}>
+                    ✓ Avatar Uploaded
+                  </span>
+                )}
+              </label>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Option 1: File Upload from System */}
+                <div style={{
+                  border: '1px dashed var(--accent-cyan)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  background: 'rgba(0, 242, 254, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  minHeight: '85px'
+                }}>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleAvatarFileUpload}
+                    disabled={uploadingAvatar}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer'
+                    }}
+                  />
+                  {uploadingAvatar ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                      <Loader2 size={18} className="animate-spin" /> Uploading Avatar...
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={22} style={{ color: 'var(--accent-cyan)', marginBottom: '4px' }} />
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>
+                        Upload Avatar Image
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Choose PNG, JPG or WEBP from system
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Option 2: Direct URL Input & Preview */}
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>OR Paste Image URL:</span>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={avatarUrl} 
+                      onChange={(e) => setAvatarUrl(e.target.value)} 
+                      placeholder="https://..." 
+                    />
+                    {avatarUrl && (
+                      <img 
+                        src={avatarUrl} 
+                        alt="Avatar Preview" 
+                        style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--accent-cyan)', flexShrink: 0 }} 
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Profile Cover Banner Image Field */}
+            <div className="form-group" style={{ gridColumn: 'span 2' }}>
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 600 }}>Profile Cover / Header Banner (Upload from Computer or Enter Link)</span>
+                {coverUrl && (
+                  <span style={{ color: '#38ef7d', fontSize: '0.8rem', fontWeight: 600 }}>
+                    ✓ Cover Uploaded
+                  </span>
+                )}
+              </label>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* Option 1: File Upload from System */}
+                <div style={{
+                  border: '1px dashed var(--accent-cyan)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  background: 'rgba(0, 242, 254, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  minHeight: '85px'
+                }}>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleCoverFileUpload}
+                    disabled={uploadingCover}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer'
+                    }}
+                  />
+                  {uploadingCover ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                      <Loader2 size={18} className="animate-spin" /> Uploading Cover...
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={22} style={{ color: 'var(--accent-cyan)', marginBottom: '4px' }} />
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>
+                        Upload Cover Banner Image
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        Choose wide image from system
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Option 2: Direct URL Input & Preview */}
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>OR Paste Banner Link:</span>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      value={coverUrl} 
+                      onChange={(e) => setCoverUrl(e.target.value)} 
+                      placeholder="https://..." 
+                    />
+                    {coverUrl && (
+                      <img 
+                        src={coverUrl} 
+                        alt="Cover Preview" 
+                        style={{ width: '64px', height: '38px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--accent-cyan)', flexShrink: 0 }} 
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -516,6 +710,84 @@ export default function ProfileBuilder() {
                 </span>
               ))}
             </div>
+          </div>
+
+          {/* Certificates & Credentials */}
+          <div style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '20px', marginTop: '20px' }}>
+            <h5 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '12px', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Award size={18} style={{ color: 'var(--accent-cyan)' }} /> Certificates & Credentials
+            </h5>
+            {certificates.map((cert, idx) => (
+              <div key={idx} style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-glass)', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <input type="text" className="form-input" placeholder="Certificate Title (e.g. Orbital Mechanics Spec)" value={cert.title || ''} onChange={(e) => {
+                    const u = [...certificates]; u[idx].title = e.target.value; setCertificates(u);
+                  }} />
+                  <input type="text" className="form-input" placeholder="Issuer (e.g. NASA / ISRO / MIT)" value={cert.issuer || ''} onChange={(e) => {
+                    const u = [...certificates]; u[idx].issuer = e.target.value; setCertificates(u);
+                  }} />
+                  <input type="text" className="form-input" placeholder="Issue Date / Year" value={cert.issueDate || ''} onChange={(e) => {
+                    const u = [...certificates]; u[idx].issueDate = e.target.value; setCertificates(u);
+                  }} />
+                </div>
+
+                {/* Dual File / URL Input for Certificate Credential */}
+                <div>
+                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span>Certificate Document / Badge (Upload File or Enter Link)</span>
+                    {cert.credentialUrl && <span style={{ color: '#38ef7d', fontWeight: 600 }}>✓ Attached</span>}
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    {/* File upload */}
+                    <div style={{
+                      border: '1px dashed var(--accent-cyan)',
+                      borderRadius: '10px',
+                      padding: '10px',
+                      textAlign: 'center',
+                      background: 'rgba(0, 242, 254, 0.04)',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <input 
+                        type="file" 
+                        accept="image/*,.pdf" 
+                        onChange={(e) => handleCertFileUpload(e, idx)}
+                        disabled={uploadingCertIndex === idx}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }}
+                      />
+                      {uploadingCertIndex === idx ? (
+                        <span style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Loader2 size={14} className="animate-spin" /> Uploading Certificate...
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#fff', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <Upload size={14} style={{ color: 'var(--accent-cyan)' }} /> Upload File (Image / PDF)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* URL Input */}
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      placeholder="OR Paste Credential URL (https://...)" 
+                      value={cert.credentialUrl || ''} 
+                      onChange={(e) => {
+                        const u = [...certificates]; u[idx].credentialUrl = e.target.value; setCertificates(u);
+                      }} 
+                    />
+                  </div>
+                </div>
+
+                <button className="btn-secondary" style={{ marginTop: '12px', fontSize: '0.8rem' }} onClick={() => setCertificates(certificates.filter((_, i) => i !== idx))}>
+                  <Trash2 size={14} /> Remove Certificate
+                </button>
+              </div>
+            ))}
+            <button className="btn-secondary" onClick={handleAddCert}><Plus size={16} /> Add Certificate / Credential</button>
           </div>
 
           {/* Business Details */}
