@@ -40,7 +40,7 @@ function App() {
           <main style={{ flex: 1 }}>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route path="/" element={<ProtectedRoute><Directory /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><MessagingHub /></ProtectedRoute>} />
               <Route path="/members" element={<ProtectedRoute><Directory /></ProtectedRoute>} />
               <Route path="/members/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><ProfileBuilder /></ProtectedRoute>} />
