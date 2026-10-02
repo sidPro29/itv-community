@@ -374,16 +374,52 @@ export default function MessagingHub() {
     }
   };
 
-  // Timer for active call duration
+  const [conversations, setConversations] = useState([]);
+
   useEffect(() => {
-    let interval = null;
-    if (activeCall && activeCall.status === 'connected') {
-      interval = setInterval(() => {
-        setActiveCall(prev => prev ? { ...prev, duration: prev.duration + 1 } : null);
-      }, 1000);
+    if (currentUser) {
+      fetchConversations();
     }
-    return () => clearInterval(interval);
-  }, [activeCall?.status]);
+  }, [currentUser]);
+
+  const fetchConversations = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/conversations`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setConversations(Array.isArray(data) ? data : []);
+        if (!recipientIdFromQuery && Array.isArray(data) && data.length > 0) {
+          fetchRecipient(data[0]._id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching conversations', err);
+    }
+  };
+
+  const handleToggleBlock = async () => {
+    if (!activeRecipient) return;
+    try {
+      const token = localStorage.getItem('token');
+      const endpoint = activeRecipient.isBlockedByMe ? `/community/unblock/${activeRecipient._id}` : `/community/block/${activeRecipient._id}`;
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        setActiveRecipient(prev => ({ ...prev, isBlockedByMe: !prev.isBlockedByMe }));
+        fetchConversations();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Check subscription plan tier
+  const isPlanActive = currentUser?.communitySubscription?.tier && currentUser.communitySubscription.tier !== 'free';
 
   if (verificationStatus !== 'verified') {
     return (
@@ -417,30 +453,45 @@ export default function MessagingHub() {
         overflow: 'hidden'
       }}>
         
-        {/* Sidebar: Conversations / Recipient */}
-        <div style={{ borderRight: '1px solid var(--border-glass)', padding: '20px', background: 'rgba(5, 7, 15, 0.4)' }}>
+        {/* Sidebar: Conversations List */}
+        <div style={{ borderRight: '1px solid var(--border-glass)', padding: '20px', background: 'rgba(5, 7, 15, 0.4)', display: 'flex', flexDirection: 'column' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MessageSquare size={18} style={{ color: 'var(--accent-cyan)' }} /> Conversations
           </h3>
 
-          {activeRecipient ? (
-            <div className="glass-panel" style={{ padding: '14px', borderRadius: '12px', background: 'rgba(0, 242, 254, 0.1)', borderColor: 'var(--accent-cyan)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: activeRecipient.avatarUrl ? `url(${activeRecipient.avatarUrl}) center/cover` : '#00f2fe', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
-                  {!activeRecipient.avatarUrl && activeRecipient.fullName.charAt(0)}
-                </div>
-                <div>
-                  <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>{activeRecipient.fullName}</h4>
-                  <span className={`badge-category badge-${activeRecipient.category}`} style={{ fontSize: '0.7rem' }}>
-                    {activeRecipient.category}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ) : (
+          {conversations.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Select a member from the Directory to start private messaging or calling.
+              No active conversations yet. Select a member from the Directory to start.
             </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1 }}>
+              {conversations.map((c, i) => {
+                const isSelected = activeRecipient?._id === c._id;
+                return (
+                  <div 
+                    key={i}
+                    onClick={() => fetchRecipient(c._id)}
+                    style={{
+                      padding: '12px',
+                      borderRadius: '12px',
+                      background: isSelected ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-glass)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: c.avatarUrl ? `url(${c.avatarUrl}) center/cover` : '#00f2fe', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, flexShrink: 0 }}>
+                        {!c.avatarUrl && c.fullName.charAt(0)}
+                      </div>
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <h4 style={{ fontSize: '0.88rem', fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.fullName}</h4>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.lastMessage || 'Connected'}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
 
@@ -448,7 +499,7 @@ export default function MessagingHub() {
         {activeRecipient ? (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             
-            {/* Header with Call Controls */}
+            {/* Header with Call & Block Controls */}
             <div style={{
               padding: '16px 24px',
               borderBottom: '1px solid var(--border-glass)',
@@ -459,15 +510,47 @@ export default function MessagingHub() {
             }}>
               <div>
                 <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>{activeRecipient.fullName}</h3>
-                <span style={{ color: '#38ef7d', fontSize: '0.8rem' }}>● Online & Verified</span>
+                <span style={{ color: '#38ef7d', fontSize: '0.8rem' }}>
+                  {activeRecipient.isBlockedByMe ? '🔴 Blocked by You' : '● Online & Verified'}
+                </span>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button className="btn-secondary" style={{ padding: '8px 14px' }} onClick={() => startCall('audio')}>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '8px 14px' }} 
+                  onClick={() => {
+                    if (!isPlanActive) {
+                      navigate('/upgrade');
+                    } else {
+                      startCall('audio');
+                    }
+                  }}
+                  disabled={activeRecipient.isBlockedByMe}
+                >
                   <PhoneCall size={16} /> Audio Call
                 </button>
-                <button className="btn-primary" style={{ padding: '8px 14px' }} onClick={() => startCall('video')}>
+                <button 
+                  className="btn-primary" 
+                  style={{ padding: '8px 14px' }} 
+                  onClick={() => {
+                    if (!isPlanActive) {
+                      navigate('/upgrade');
+                    } else {
+                      startCall('video');
+                    }
+                  }}
+                  disabled={activeRecipient.isBlockedByMe}
+                >
                   <Video size={16} /> Video Call
+                </button>
+                <button 
+                  className="btn-secondary" 
+                  style={{ padding: '8px 12px', color: activeRecipient.isBlockedByMe ? '#38ef7d' : '#ff4d4d', borderColor: activeRecipient.isBlockedByMe ? '#38ef7d' : '#ff4d4d' }}
+                  onClick={handleToggleBlock}
+                  title={activeRecipient.isBlockedByMe ? "Unblock Member" : "Block Member"}
+                >
+                  {activeRecipient.isBlockedByMe ? 'Unblock' : 'Block'}
                 </button>
               </div>
             </div>
@@ -477,6 +560,13 @@ export default function MessagingHub() {
               {errorMsg && (
                 <div style={{ background: 'rgba(255, 77, 77, 0.15)', color: '#ff4d4d', padding: '10px 14px', borderRadius: '10px', fontSize: '0.85rem' }}>
                   {errorMsg}
+                </div>
+              )}
+
+              {!isPlanActive && (
+                <div style={{ background: 'rgba(255, 215, 0, 0.15)', border: '1px solid rgba(255, 215, 0, 0.3)', color: '#ffd700', padding: '12px 18px', borderRadius: '12px', fontSize: '0.88rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>🔒 Active Community Plan required to send messages or calls.</span>
+                  <button className="btn-primary" style={{ padding: '6px 14px', fontSize: '0.8rem' }} onClick={() => navigate('/upgrade')}>Upgrade Now</button>
                 </div>
               )}
 
@@ -516,11 +606,23 @@ export default function MessagingHub() {
                 type="text"
                 className="form-input"
                 style={{ flex: 1 }}
-                placeholder="Type your message..."
+                placeholder={
+                  activeRecipient.isBlockedByMe 
+                    ? "Member is blocked" 
+                    : !isPlanActive 
+                    ? "Upgrade to a Community Plan to send messages" 
+                    : "Type your message..."
+                }
                 value={inputText}
+                disabled={!isPlanActive || activeRecipient.isBlockedByMe}
                 onChange={(e) => setInputText(e.target.value)}
               />
-              <button type="submit" className="btn-primary" style={{ padding: '12px 20px' }}>
+              <button 
+                type="submit" 
+                className="btn-primary" 
+                style={{ padding: '12px 20px' }}
+                disabled={!isPlanActive || activeRecipient.isBlockedByMe}
+              >
                 <Send size={18} />
               </button>
             </form>

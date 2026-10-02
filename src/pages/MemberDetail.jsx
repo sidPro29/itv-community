@@ -34,6 +34,22 @@ export default function MemberDetail() {
     fetchMemberDetail();
   }, [id]);
 
+  const handleToggleBlock = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const endpoint = member.isBlockedByMe ? `/community/unblock/${id}` : `/community/block/${id}`;
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        setMember(prev => ({ ...prev, isBlockedByMe: !prev.isBlockedByMe }));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const handleConnectAction = (actionType) => {
     if (member?.communityTier === 'free') {
       navigate('/upgrade');
@@ -117,15 +133,22 @@ export default function MemberDetail() {
 
             {/* Interactive Buttons */}
             {!member.isLocked && (
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button className="btn-primary" onClick={() => handleConnectAction('text')}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button className="btn-primary" onClick={() => handleConnectAction('text')} disabled={member.isBlockedByMe}>
                   <MessageSquare size={16} /> Private Message
                 </button>
-                <button className="btn-secondary" onClick={() => handleConnectAction('audio')}>
+                <button className="btn-secondary" onClick={() => handleConnectAction('audio')} disabled={member.isBlockedByMe}>
                   <PhoneCall size={16} /> Audio Call
                 </button>
-                <button className="btn-secondary" onClick={() => handleConnectAction('video')}>
+                <button className="btn-secondary" onClick={() => handleConnectAction('video')} disabled={member.isBlockedByMe}>
                   <Video size={16} /> Video Call
+                </button>
+                <button 
+                  className="btn-secondary" 
+                  style={{ color: member.isBlockedByMe ? '#38ef7d' : '#ff4d4d', borderColor: member.isBlockedByMe ? '#38ef7d' : '#ff4d4d' }}
+                  onClick={handleToggleBlock}
+                >
+                  {member.isBlockedByMe ? 'Unblock Member' : 'Block Member'}
                 </button>
               </div>
             )}
