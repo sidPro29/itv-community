@@ -24,7 +24,7 @@ export default function ProfileBuilder() {
 
   // Verification Documents
   const [idDocumentUrl, setIdDocumentUrl] = useState('');
-  const [docType, setDocType] = useState('Aadhaar / Passport / Govt ID');
+  const [docType, setDocType] = useState('Aadhaar Card');
   const [legalName, setLegalName] = useState('');
   const [address, setAddress] = useState('');
 
@@ -170,14 +170,32 @@ export default function ProfileBuilder() {
     }
   };
 
-  const handleRemoveSkill = (skillToRemove) => {
-    setSkills(skills.filter(s => s !== skillToRemove));
+  const getBioWordCount = (text) => {
+    if (!text || !text.trim()) return 0;
+    return text.trim().split(/\s+/).length;
+  };
+
+  const handleBioChange = (e) => {
+    const text = e.target.value;
+    const words = text.trim() ? text.trim().split(/\s+/) : [];
+    if (words.length <= 250) {
+      setBio(text);
+    } else {
+      // Keep up to 250 words
+      setBio(words.slice(0, 250).join(' '));
+    }
   };
 
   const handleSubmit = async (submitForVerification = false) => {
     setSaving(true);
     setSuccessMsg('');
     setErrorMsg('');
+
+    if (getBioWordCount(bio) > 250) {
+      setErrorMsg('Bio cannot exceed 250 words.');
+      setSaving(false);
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -507,8 +525,13 @@ export default function ProfileBuilder() {
               </div>
 
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                <label>Bio / Headline</label>
-                <textarea className="form-textarea" rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Brief introduction about your passion, research, or business in the space sector..." />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ margin: 0 }}>Bio / Headline</label>
+                  <span style={{ fontSize: '0.8rem', color: getBioWordCount(bio) > 240 ? '#ff4d4d' : 'var(--text-muted)' }}>
+                    {getBioWordCount(bio)} / 250 words max
+                  </span>
+                </div>
+                <textarea className="form-textarea" rows={3} value={bio} onChange={handleBioChange} placeholder="Brief introduction about your passion, research, or business in the space sector (Max 250 words)..." />
               </div>
 
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
@@ -638,8 +661,10 @@ export default function ProfileBuilder() {
                 <label>Document Type *</label>
                 <select className="form-select" value={docType} onChange={(e) => setDocType(e.target.value)}>
                   <option value="Aadhaar Card">Aadhaar Card</option>
+                  <option value="PAN Card">PAN Card</option>
                   <option value="Passport">Passport</option>
                   <option value="Driving License">Driving License</option>
+                  <option value="National ID Card / Govt ID">National ID Card / Govt ID</option>
                   <option value="Government Employee ID">Government Employee ID</option>
                 </select>
               </div>
