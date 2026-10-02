@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { User, Shield, Briefcase, GraduationCap, Award, FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, Building } from 'lucide-react';
+import { User, Shield, Briefcase, GraduationCap, Award, FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, Building, Upload, Loader2 } from 'lucide-react';
 
 export default function ProfileBuilder() {
   const { currentUser, communityProfile, verificationStatus, verificationBadge, refreshProfile, API_URL } = useAuth();
@@ -27,8 +27,65 @@ export default function ProfileBuilder() {
   const [address, setAddress] = useState('');
 
   const [saving, setSaving] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadedDocName, setUploadedDocName] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const handleIdFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingDoc(true);
+    setErrorMsg('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          'x-auth-token': token
+        },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'File upload failed');
+
+      const fileUrl = data.url || `${API_URL}${data.relativeUrl}`;
+      setIdDocumentUrl(fileUrl);
+      setUploadedDocName(file.name);
+    } catch (err) {
+      setErrorMsg('File upload error: ' + err.message);
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  const handleAvatarFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/upload`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setAvatarUrl(data.url);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     if (currentUser && communityProfile) {
@@ -274,8 +331,75 @@ export default function ProfileBuilder() {
             </div>
 
             <div className="form-group" style={{ gridColumn: 'span 2' }}>
-              <label>Govt ID Document Image / PDF URL *</label>
-              <input type="text" className="form-input" value={idDocumentUrl} onChange={(e) => setIdDocumentUrl(e.target.value)} placeholder="https://... (Direct URL to uploaded ID doc)" />
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Govt ID Document (Upload File or Enter URL) *</span>
+                {idDocumentUrl && (
+                  <span style={{ color: '#38ef7d', fontSize: '0.8rem', fontWeight: 600 }}>
+                    ✓ Document Attached
+                  </span>
+                )}
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '8px' }}>
+                {/* Option 1: File Upload from System */}
+                <div style={{
+                  border: '1px dashed var(--accent-cyan)',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  textAlign: 'center',
+                  background: 'rgba(0, 242, 254, 0.05)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  minHeight: '85px'
+                }}>
+                  <input 
+                    type="file" 
+                    accept="image/*,.pdf" 
+                    onChange={handleIdFileUpload}
+                    disabled={uploadingDoc}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      opacity: 0,
+                      cursor: 'pointer'
+                    }}
+                  />
+                  {uploadingDoc ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-cyan)', fontWeight: 600 }}>
+                      <Loader2 size={18} className="animate-spin" /> Uploading Document...
+                    </div>
+                  ) : (
+                    <>
+                      <Upload size={22} style={{ color: 'var(--accent-cyan)', marginBottom: '4px' }} />
+                      <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>
+                        Upload from System (Image / PDF)
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {uploadedDocName ? `Selected: ${uploadedDocName}` : 'Click to browse Aadhaar, Passport, DL, etc.'}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Option 2: Direct URL Input */}
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px' }}>OR Paste Direct File / Drive URL:</span>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={idDocumentUrl} 
+                    onChange={(e) => setIdDocumentUrl(e.target.value)} 
+                    placeholder="https://... (Direct URL to uploaded ID doc)" 
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
