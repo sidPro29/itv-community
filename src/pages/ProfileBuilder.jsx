@@ -43,7 +43,10 @@ export default function ProfileBuilder() {
     const token = localStorage.getItem('token');
     const res = await fetch(`${API_URL}/upload`, {
       method: 'POST',
-      headers: { 'x-auth-token': token },
+      headers: {
+        'x-auth-token': token,
+        'x-upload-source': 'community'
+      },
       body: formData
     });
     const data = await res.json();
