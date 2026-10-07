@@ -79,7 +79,7 @@ export default function Navbar() {
         <Link to="/" className="navbar-brand">
           <div className="brand-logo">🚀</div>
           <div className="brand-text">
-            <span className="brand-title">ITV SPACE</span>
+            <span className="brand-title">ITV Space</span>
             <span className="brand-sub">COMMUNITY</span>
           </div>
         </Link>
@@ -102,7 +102,7 @@ export default function Navbar() {
           {currentUser ? (
             <div className="user-menu" style={{ position: 'relative' }}>
               {/* Notification Bell */}
-              <button 
+              <button
                 onClick={handleNotifClick}
                 style={{
                   position: 'relative',
@@ -168,7 +168,7 @@ export default function Navbar() {
                     <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No notifications yet</p>
                   ) : (
                     notifications.map((n, i) => (
-                      <div 
+                      <div
                         key={i}
                         onClick={() => {
                           setShowNotifs(false);
@@ -191,9 +191,9 @@ export default function Navbar() {
                 </div>
               )}
 
-              {getStatusBadge()}
-              <a 
-                href={import.meta.env.VITE_WEB_URL || 'http://localhost:5173'} 
+              {/* {getStatusBadge()} */}
+              <a
+                href={import.meta.env.VITE_WEB_URL || 'http://localhost:5173'}
                 className="btn-link-itv"
                 title="Back to Interplanetary TV"
               >

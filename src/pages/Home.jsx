@@ -119,7 +119,7 @@ export default function Home() {
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   // Load Profile State
   useEffect(() => {
@@ -270,7 +270,9 @@ export default function Home() {
   };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSendMessage = async (e) => {
@@ -1328,7 +1330,7 @@ export default function Home() {
                 )}
 
                 {/* Chat Messages Thread (Full width) */}
-                <div style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                <div ref={chatContainerRef} style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
                   {loadingMsgs ? (
                     <div style={{ textAlign: 'center', color: 'var(--text-muted)', margin: 'auto' }}>
                       <Loader2 size={20} className="animate-spin" /> Loading messages...
@@ -1360,7 +1362,6 @@ export default function Home() {
                       );
                     })
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
 
                 {/* Chat Input Field & Send Button (Full width) */}
