@@ -76,10 +76,10 @@ export default function Navbar() {
   return (
     <nav className="navbar-container">
       <div className="navbar-inner">
-        <Link to="/" className="navbar-brand">
+        <Link to="/messages" className="navbar-brand">
           <div className="brand-logo">🚀</div>
           <div className="brand-text">
-            <span className="brand-title">ITV Space</span>
+            <span className="brand-title">ITV SPACE</span>
             <span className="brand-sub">COMMUNITY</span>
           </div>
         </Link>
@@ -191,7 +191,7 @@ export default function Navbar() {
                 </div>
               )}
 
-              {/* {getStatusBadge()} */}
+              {getStatusBadge()}
               <a
                 href={import.meta.env.VITE_WEB_URL || 'http://localhost:5173'}
                 className="btn-link-itv"
