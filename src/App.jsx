@@ -4,10 +4,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import Login from './pages/Login';
-import ProfileBuilder from './pages/ProfileBuilder';
+import Home from './pages/Home';
 import Directory from './pages/Directory';
 import MemberDetail from './pages/MemberDetail';
-import MessagingHub from './pages/MessagingHub';
 import UpgradeCommunity from './pages/UpgradeCommunity';
 import './index.css';
 
@@ -40,11 +39,11 @@ function App() {
           <main style={{ flex: 1 }}>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route path="/" element={<ProtectedRoute><MessagingHub /></ProtectedRoute>} />
+              <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
               <Route path="/members" element={<ProtectedRoute><Directory /></ProtectedRoute>} />
               <Route path="/members/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
-              <Route path="/profile" element={<ProtectedRoute><ProfileBuilder /></ProtectedRoute>} />
-              <Route path="/messages" element={<ProtectedRoute><MessagingHub /></ProtectedRoute>} />
+              <Route path="/profile" element={<Navigate to="/" replace />} />
+              <Route path="/messages" element={<Navigate to="/" replace />} />
               <Route path="/upgrade" element={<ProtectedRoute><UpgradeCommunity /></ProtectedRoute>} />
             </Routes>
           </main>

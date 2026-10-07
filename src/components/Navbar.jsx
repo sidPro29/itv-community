@@ -76,7 +76,7 @@ export default function Navbar() {
   return (
     <nav className="navbar-container">
       <div className="navbar-inner">
-        <Link to="/messages" className="navbar-brand">
+        <Link to="/" className="navbar-brand">
           <div className="brand-logo">🚀</div>
           <div className="brand-text">
             <span className="brand-title">ITV SPACE</span>
@@ -86,17 +86,14 @@ export default function Navbar() {
 
         {currentUser && (
           <div className="navbar-links">
-            <Link to="/messages" className={`nav-link ${location.pathname === '/messages' ? 'active' : ''}`}>
-              <MessageSquare size={18} /> Messages & Calls
+            <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
+              <UserCheck size={18} /> Home
             </Link>
             <Link to="/members" className={`nav-link ${location.pathname === '/members' ? 'active' : ''}`}>
               <Users size={18} /> Directory
             </Link>
             <Link to="/upgrade" className={`nav-link ${location.pathname === '/upgrade' ? 'active' : ''}`}>
               <Sparkles size={18} style={{ color: '#ffd700' }} /> Community Tiers
-            </Link>
-            <Link to="/profile" className={`nav-link ${location.pathname === '/profile' ? 'active' : ''}`}>
-              <UserCheck size={18} /> Profile
             </Link>
           </div>
         )}
