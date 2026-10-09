@@ -769,8 +769,8 @@ export default function Home() {
 
             </div>
 
-            {/* RIGHT FLEX COLUMN: 16:9 HLS Video Player Sibling Column (Zero Overlap Guaranteed!) */}
-            <div style={{ flex: '0 0 350px', width: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '48px' }}>
+            {/* RIGHT FLEX COLUMN: 16:9 HLS Video Player (Same size as previous absolute version) */}
+            <div style={{ flex: '0 0 430px', width: '430px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', flexShrink: 0, paddingTop: '48px' }}>
               <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ width: '100%', aspectRatio: '16/9' }} />
             </div>
 
