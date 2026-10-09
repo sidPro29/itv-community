@@ -698,8 +698,8 @@ export default function Home() {
           position: 'relative'
         }} />
 
-        {/* Left Column Content: Avatar, Name, Single Badge, Location & Bio (5px gap from Video Player) */}
-        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-42px', width: 'calc(100% - 409px)', maxWidth: 'calc(100% - 409px)', boxSizing: 'border-box' }}>
+        {/* Left Column Content: Avatar, Name, Single Badge, Location & Bio (Clear 20px gap before Video Player) */}
+        <div style={{ padding: '0 465px 20px 28px', position: 'relative', marginTop: '-42px', width: '100%', boxSizing: 'border-box' }}>
           
           {/* Avatar & Name Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
