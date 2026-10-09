@@ -698,8 +698,8 @@ export default function Home() {
           position: 'relative'
         }} />
 
-        {/* Left Column Content (Remaining ~65% width): Avatar, Name, Single Badge, Location & Bio */}
-        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-42px', width: 'calc(100% - 435px)', boxSizing: 'border-box' }}>
+        {/* Left Column Content: Avatar, Name, Single Badge, Location & Bio (Constrained so text NEVER goes below player) */}
+        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-42px', width: 'calc(100% - 480px)', maxWidth: 'calc(100% - 480px)', boxSizing: 'border-box' }}>
           
           {/* Avatar & Name Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
