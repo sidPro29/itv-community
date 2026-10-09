@@ -20,8 +20,8 @@ const ICE_SERVERS = {
   ]
 };
 
-// 16:9 HLS Video Player Component (Increased by 20% width to 380px)
-function HlsVideoPlayer({ src }) {
+// 16:9 HLS Video Player Component
+function HlsVideoPlayer({ src, style }) {
   const videoRef = useRef(null);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ function HlsVideoPlayer({ src }) {
   }, [src]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.6)', border: '1px solid var(--border-glass)', background: '#000' }}>
+    <div style={{ position: 'relative', height: '100%', aspectRatio: '16/9', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.6)', border: '1px solid var(--border-glass)', background: '#000', ...style }}>
       <video
         ref={videoRef}
         controls
@@ -755,19 +755,18 @@ export default function Home() {
 
         </div>
 
-        {/* Right 16:9 HLS Video Player: Positioned with uniform 16px gaps from Top, Right (end), and Bottom edges */}
+        {/* Right 16:9 HLS Video Player: Positioned with equal 16px gaps from Top, Right (end), and Bottom edges */}
         <div style={{
           position: 'absolute',
           top: '16px',
           right: '16px',
           bottom: '16px',
-          width: '360px',
+          zIndex: 10,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 10
+          justifyContent: 'flex-end'
         }}>
-          <HlsVideoPlayer src={HARDCODED_VIDEO_URL} />
+          <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ height: '100%', width: 'auto', aspectRatio: '16/9' }} />
         </div>
 
       </div>
