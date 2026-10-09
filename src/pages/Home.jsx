@@ -688,79 +688,85 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '1280px', margin: '30px auto', padding: '0 20px' }}>
       
-      {/* 1. TOP HERO BLOCK (Full Width, Compact Height, Cover upper half, Info lower half, 16:9 HLS Video Player top right) */}
+      {/* 1. TOP HERO BLOCK (Fit Video Player in Right 35% Column, Left 65% for Avatar, Name & Bio) */}
       <div className="glass-panel" style={{ borderRadius: '24px', overflow: 'hidden', marginBottom: '30px', position: 'relative' }}>
         
-        {/* Upper Half Height: Cover Banner Graphic */}
+        {/* Cover Banner Graphic across top */}
         <div style={{
-          height: '160px',
+          height: '120px',
           background: coverUrl ? `url(${coverUrl}) center/cover` : 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(121, 40, 202, 0.35) 100%)',
           position: 'relative'
-        }}>
-          {/* Top Right: 16:9 HLS Video Player (20% Larger width: 380px) */}
-          <div style={{ position: 'absolute', top: '16px', right: '16px', width: '380px', zIndex: 10 }}>
-            <HlsVideoPlayer src={HARDCODED_VIDEO_URL} />
-          </div>
-        </div>
+        }} />
 
-        {/* Lower Half Height: Avatar, Name, Single Badge, Location, Full-width Bio */}
-        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-50px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '20px' }}>
+        {/* Content Section: 2 Columns (65% Left for Info & Bio | 35% Right for HLS Video Player) */}
+        <div style={{ padding: '0 28px 24px 28px', position: 'relative', marginTop: '-45px' }}>
+          <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
             
-            {/* Avatar & Name */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '18px' }}>
-              <div style={{
-                width: '105px',
-                height: '105px',
-                borderRadius: '50%',
-                background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
-                border: '4px solid var(--bg-dark)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '2.5rem',
-                fontWeight: 800,
-                color: '#fff',
-                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-                flexShrink: 0
-              }}>
-                {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
-              </div>
+            {/* LEFT 65% COLUMN: Avatar, Name, Single Badge, Location & Bio */}
+            <div style={{ flex: '1 1 60%', minWidth: '280px' }}>
+              
+              {/* Avatar & Name Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '18px', marginBottom: '14px' }}>
+                <div style={{
+                  width: '96px',
+                  height: '96px',
+                  borderRadius: '50%',
+                  background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+                  border: '4px solid var(--bg-dark)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '2.4rem',
+                  fontWeight: 800,
+                  color: '#fff',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                  flexShrink: 0
+                }}>
+                  {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
+                </div>
 
-              <div style={{ marginBottom: '6px' }}>
-                <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
-                  {fullName || currentUser?.username || 'Space Member'}
-                </h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
-                  {/* Just ONE badge: If verified show ONLY SINGLE VERIFIED BADGE, else show category + status */}
-                  {verificationStatus === 'verified' ? (
-                    <span className={`status-pill pill-verified pill-${verificationBadge}`}>
-                      <Shield size={12} /> VERIFIED {(verificationBadge !== 'none' ? verificationBadge : category).toUpperCase()}
-                    </span>
-                  ) : (
-                    <>
-                      <span className={`badge-category badge-${category}`}>
-                        🚀 {category.toUpperCase()}
+                <div style={{ marginBottom: '4px' }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.75rem', fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+                    {fullName || currentUser?.username || 'Space Member'}
+                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                    {/* Just ONE badge: If verified show ONLY SINGLE VERIFIED BADGE, else show category + status */}
+                    {verificationStatus === 'verified' ? (
+                      <span className={`status-pill pill-verified pill-${verificationBadge}`}>
+                        <Shield size={12} /> VERIFIED {(verificationBadge !== 'none' ? verificationBadge : category).toUpperCase()}
                       </span>
-                      {getStatusBadge()}
-                    </>
-                  )}
-                  {location && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <MapPin size={14} /> {location}
-                    </span>
-                  )}
+                    ) : (
+                      <>
+                        <span className={`badge-category badge-${category}`}>
+                          🚀 {category.toUpperCase()}
+                        </span>
+                        {getStatusBadge()}
+                      </>
+                    )}
+                    {location && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={14} /> {location}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Bio Text (Constrained to the left 65% column) */}
+              <p style={{ color: '#e2e8f0', fontSize: '0.92rem', lineHeight: 1.55, margin: 0 }}>
+                {bio || 'Space enthusiast & member of the Interplanetary Community.'}
+              </p>
+
+            </div>
+
+            {/* RIGHT 35% COLUMN: 16:9 HLS Video Player fitted inside card padding */}
+            <div style={{ flex: '0 0 35%', maxWidth: '420px', minWidth: '280px', marginTop: '10px' }}>
+              <HlsVideoPlayer src={HARDCODED_VIDEO_URL} />
             </div>
 
           </div>
-
-          {/* Full-width Bio Headline (Spans till the end of the hero card so height remains compact) */}
-          <p style={{ marginTop: '16px', color: '#e2e8f0', fontSize: '0.98rem', lineHeight: 1.6, width: '100%', maxWidth: 'none' }}>
-            {bio || 'Space enthusiast & member of the Interplanetary Community.'}
-          </p>
         </div>
+
       </div>
 
       {/* 2. TWO COLUMNS LAYOUT: LEFT COLUMN (PROFILE DETAILS) | RIGHT COLUMN (CONTACTS + CHAT) */}
