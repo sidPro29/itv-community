@@ -699,7 +699,7 @@ export default function Home() {
         }} />
 
         {/* Left Column Content (Remaining ~65% width): Avatar, Name, Single Badge, Location & Bio */}
-        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-42px', width: 'calc(100% - 390px)', boxSizing: 'border-box' }}>
+        <div style={{ padding: '0 28px 20px 28px', position: 'relative', marginTop: '-42px', width: 'calc(100% - 435px)', boxSizing: 'border-box' }}>
           
           {/* Avatar & Name Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
@@ -748,19 +748,30 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Bio Text (Constrained to left section width) */}
-          <p style={{ color: '#e2e8f0', fontSize: '0.92rem', lineHeight: 1.55, margin: 0, width: '100%' }}>
+          {/* Bio Text (Constrained to left section width, max 5 lines with ellipsis) */}
+          <p style={{
+            color: '#e2e8f0',
+            fontSize: '0.92rem',
+            lineHeight: 1.55,
+            margin: 0,
+            width: '100%',
+            display: '-webkit-box',
+            WebkitLineClamp: 5,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
             {bio || 'Space enthusiast & member of the Interplanetary Community.'}
           </p>
 
         </div>
 
-        {/* Right 16:9 HLS Video Player: Positioned with equal 16px gaps from Top, Right (end), and Bottom edges */}
+        {/* Right 16:9 HLS Video Player: Positioned with equal 9px gaps (7px reduced) from Top, Right (end), and Bottom edges */}
         <div style={{
           position: 'absolute',
-          top: '16px',
-          right: '16px',
-          bottom: '16px',
+          top: '9px',
+          right: '9px',
+          bottom: '9px',
           zIndex: 10,
           display: 'flex',
           alignItems: 'center',
