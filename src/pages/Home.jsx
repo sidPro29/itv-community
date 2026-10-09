@@ -688,8 +688,8 @@ export default function Home() {
   return (
     <div style={{ maxWidth: '1280px', margin: '30px auto', padding: '0 20px' }}>
       
-      {/* 1. TOP HERO BLOCK (Video Player with uniform 16px gaps from Top, Right & Bottom edges) */}
-      <div className="glass-panel" style={{ borderRadius: '24px', overflow: 'hidden', marginBottom: '30px', position: 'relative', minHeight: '230px' }}>
+      {/* 1. TOP HERO BLOCK (Pure Flexbox Architecture: Zero Overlap Guaranteed) */}
+      <div className="glass-panel" style={{ borderRadius: '24px', overflow: 'hidden', marginBottom: '30px', position: 'relative' }}>
         
         {/* Cover Banner Graphic across top */}
         <div style={{
@@ -698,86 +698,83 @@ export default function Home() {
           position: 'relative'
         }} />
 
-        {/* Left Column Content: Avatar, Name, Single Badge, Location & Bio (Clear 20px gap before Video Player) */}
-        <div style={{ padding: '0 465px 20px 28px', position: 'relative', marginTop: '-42px', width: '100%', boxSizing: 'border-box' }}>
-          
-          {/* Avatar & Name Header */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
-            <div style={{
-              width: '92px',
-              height: '92px',
-              borderRadius: '50%',
-              background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
-              border: '4px solid var(--bg-dark)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2.3rem',
-              fontWeight: 800,
-              color: '#fff',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-              flexShrink: 0
-            }}>
-              {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
-            </div>
+        {/* Hero Card Body: 2 Sibling Flex Columns (Left Content & Right Video Player) */}
+        <div style={{ padding: '0 24px 20px 28px', position: 'relative', marginTop: '-42px' }}>
+          <div style={{ display: 'flex', gap: '24px', alignItems: 'stretch' }}>
+            
+            {/* LEFT FLEX COLUMN: Avatar, Name, Single Badge, Location & Bio */}
+            <div style={{ flex: '1 1 0%', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              
+              {/* Avatar & Name Header */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
+                <div style={{
+                  width: '92px',
+                  height: '92px',
+                  borderRadius: '50%',
+                  background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+                  border: '4px solid var(--bg-dark)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '2.3rem',
+                  fontWeight: 800,
+                  color: '#fff',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                  flexShrink: 0
+                }}>
+                  {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
+                </div>
 
-            <div style={{ marginBottom: '4px' }}>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.7rem', fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
-                {fullName || currentUser?.username || 'Space Member'}
-              </h2>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
-                {/* Just ONE badge: If verified show ONLY SINGLE VERIFIED BADGE, else show category + status */}
-                {verificationStatus === 'verified' ? (
-                  <span className={`status-pill pill-verified pill-${verificationBadge}`}>
-                    <Shield size={12} /> VERIFIED {(verificationBadge !== 'none' ? verificationBadge : category).toUpperCase()}
-                  </span>
-                ) : (
-                  <>
-                    <span className={`badge-category badge-${category}`}>
-                      🚀 {category.toUpperCase()}
-                    </span>
-                    {getStatusBadge()}
-                  </>
-                )}
-                {location && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <MapPin size={14} /> {location}
-                  </span>
-                )}
+                <div style={{ marginBottom: '4px' }}>
+                  <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.7rem', fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+                    {fullName || currentUser?.username || 'Space Member'}
+                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                    {/* Just ONE badge: If verified show ONLY SINGLE VERIFIED BADGE, else show category + status */}
+                    {verificationStatus === 'verified' ? (
+                      <span className={`status-pill pill-verified pill-${verificationBadge}`}>
+                        <Shield size={12} /> VERIFIED {(verificationBadge !== 'none' ? verificationBadge : category).toUpperCase()}
+                      </span>
+                    ) : (
+                      <>
+                        <span className={`badge-category badge-${category}`}>
+                          🚀 {category.toUpperCase()}
+                        </span>
+                        {getStatusBadge()}
+                      </>
+                    )}
+                    {location && (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={14} /> {location}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
+
+              {/* Bio Text (Flex 1 column guarantees text stops cleanly before Right column) */}
+              <p style={{
+                color: '#e2e8f0',
+                fontSize: '0.92rem',
+                lineHeight: 1.55,
+                margin: 0,
+                display: '-webkit-box',
+                WebkitLineClamp: 5,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                {bio || 'Space enthusiast & member of the Interplanetary Community.'}
+              </p>
+
             </div>
+
+            {/* RIGHT FLEX COLUMN: 16:9 HLS Video Player Sibling Column (Zero Overlap Guaranteed!) */}
+            <div style={{ flex: '0 0 350px', width: '350px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '48px' }}>
+              <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ width: '100%', aspectRatio: '16/9' }} />
+            </div>
+
           </div>
-
-          {/* Bio Text (Constrained to left section width, max 5 lines with ellipsis) */}
-          <p style={{
-            color: '#e2e8f0',
-            fontSize: '0.92rem',
-            lineHeight: 1.55,
-            margin: 0,
-            width: '100%',
-            display: '-webkit-box',
-            WebkitLineClamp: 5,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            {bio || 'Space enthusiast & member of the Interplanetary Community.'}
-          </p>
-
-        </div>
-
-        {/* Right 16:9 HLS Video Player: Positioned with equal 9px gaps (7px reduced) from Top, Right (end), and Bottom edges */}
-        <div style={{
-          position: 'absolute',
-          top: '9px',
-          right: '9px',
-          bottom: '9px',
-          zIndex: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end'
-        }}>
-          <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ height: '100%', width: 'auto', aspectRatio: '16/9' }} />
         </div>
 
       </div>
