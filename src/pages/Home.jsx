@@ -48,13 +48,13 @@ function HlsVideoPlayer({ src, style }) {
   }, [src]);
 
   return (
-    <div style={{ position: 'relative', height: '100%', aspectRatio: '16/9', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.6)', border: '1px solid var(--border-glass)', background: '#000', ...style }}>
+    <div style={{ position: 'relative', height: '100%', aspectRatio: '16/9', borderRadius: '0', overflow: 'hidden', boxShadow: '0 8px 30px rgba(0,0,0,0.6)', border: 'none', background: '#000', ...style }}>
       <video
         ref={videoRef}
         controls
         muted
         playsInline
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0' }}
       />
     </div>
   );
@@ -123,17 +123,17 @@ export default function Home() {
   const heroRef = useRef(null);
   const [heroRightPadding, setHeroRightPadding] = useState(520);
 
-  // Dynamically calculate right padding to guarantee a clean 10px gap between text and video player
+  // Dynamically calculate right padding to guarantee a clean 12px gap between text and zero-gap video player
   useEffect(() => {
     if (!heroRef.current) return;
     const updatePadding = () => {
       if (heroRef.current) {
         const h = heroRef.current.offsetHeight;
-        // Player height = h - 18px (9px top + 9px bottom)
-        const pHeight = Math.max(0, h - 18);
+        // Player height = full card height h (0px top + 0px bottom)
+        const pHeight = Math.max(0, h);
         const pWidth = pHeight * (16 / 9);
-        // 9px right margin + player width + 10px gap between text and player
-        const neededPadding = Math.ceil(pWidth + 9 + 10);
+        // 0px right margin + player width + 12px gap between text and player
+        const neededPadding = Math.ceil(pWidth + 12);
         setHeroRightPadding(prev => (Math.abs(prev - neededPadding) < 2 ? prev : neededPadding));
       }
     };
@@ -793,19 +793,21 @@ export default function Home() {
 
         </div>
 
-        {/* Right 16:9 HLS Video Player: Positioned with equal 9px gaps from Top, Right (end), and Bottom edges */}
+        {/* Right 16:9 HLS Video Player: Zero gap from Top, Right (end), and Bottom edges with 0 roundness */}
         <div style={{
           position: 'absolute',
-          top: '9px',
-          right: '9px',
-          bottom: '9px',
+          top: 0,
+          right: 0,
+          bottom: 0,
           zIndex: 10,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'flex-end',
-          aspectRatio: '16/9'
+          aspectRatio: '16/9',
+          borderRadius: 0,
+          overflow: 'hidden'
         }}>
-          <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ height: '100%', width: 'auto', aspectRatio: '16/9' }} />
+          <HlsVideoPlayer src={HARDCODED_VIDEO_URL} style={{ height: '100%', width: 'auto', aspectRatio: '16/9', borderRadius: 0 }} />
         </div>
 
       </div>
