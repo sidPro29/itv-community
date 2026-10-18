@@ -46,45 +46,64 @@ export default function CallModal({
     let mounted = true;
 
     async function initMedia() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: callRoom.callType === 'video' ? {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user'
-          } : false
-        });
+      let stream = null;
 
-        if (!mounted) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        localStreamRef.current = stream;
-        setLocalStream(stream);
-
-        if (localVideoRef.current && callRoom.callType === 'video') {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        // Join room on Socket.IO
-        socket?.emit('join_call_room', {
-          roomId: callRoom.roomId,
-          userInfo: {
-            userId: currentUser._id,
-            fullName: currentUser.communityProfile?.fullName || currentUser.username,
-            avatarUrl: currentUser.communityProfile?.avatarUrl,
-            category: currentUser.communityProfile?.category
+      // Smart fallback: try audio+video -> audio only -> video only -> empty stream
+      if (callRoom.callType === 'video') {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        } catch (err1) {
+          console.warn('Audio+Video failed, trying audio only:', err1);
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            setIsVideoOff(true);
+          } catch (err2) {
+            console.warn('Audio failed, trying video only:', err2);
+            try {
+              stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+              setIsMicMuted(true);
+            } catch (err3) {
+              console.warn('No media devices available or blocked:', err3);
+              stream = new MediaStream();
+              setIsVideoOff(true);
+              setIsMicMuted(true);
+            }
           }
-        });
-
-        setCallStatus(callRoom.isInitiator ? 'ringing' : 'connected');
-      } catch (err) {
-        console.error('Call media error:', err);
-        alert('Could not access Camera/Microphone: ' + (err.message || 'Permission denied'));
-        onClose();
+        }
+      } else {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (errAudio) {
+          console.warn('Audio stream acquisition failed:', errAudio);
+          stream = new MediaStream();
+          setIsMicMuted(true);
+        }
       }
+
+      if (!mounted) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+
+      if (localVideoRef.current && stream.getVideoTracks().length > 0) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      // Join room on Socket.IO
+      socket?.emit('join_call_room', {
+        roomId: callRoom.roomId,
+        userInfo: {
+          userId: currentUser._id,
+          fullName: currentUser.communityProfile?.fullName || currentUser.username,
+          avatarUrl: currentUser.communityProfile?.avatarUrl,
+          category: currentUser.communityProfile?.category
+        }
+      });
+
+      setCallStatus(callRoom.isInitiator ? 'ringing' : 'connected');
     }
 
     initMedia();
