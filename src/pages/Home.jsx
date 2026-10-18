@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
+import { ringtone } from '../utils/soundEffects';
 
 const HARDCODED_VIDEO_URL = 'https://service.webvideocore.net/CL1olYogIrDWvwqiIKK7eHbBxDyYany25g-L4QOVH5_l5daXY9tfEZPDJS0YHgpW/a_td54sa9zvwgw.m3u8';
 
@@ -176,14 +177,46 @@ export default function Home() {
     }
   }, [currentUser, communityProfile]);
 
-  // Socket Connection Setup
+  // Play ringtone on incoming call
+  useEffect(() => {
+    if (incomingCallRoom || incomingCall) {
+      ringtone.playRingtone();
+    } else {
+      ringtone.stop();
+    }
+    return () => ringtone.stop();
+  }, [incomingCallRoom, incomingCall]);
+
+  // Socket Connection Setup (Mobile & Desktop Resilient)
   useEffect(() => {
     if (!currentUser) return;
 
     const socketUrl = API_URL.replace(/\/api$/, '');
-    socketRef.current = io(socketUrl);
+    socketRef.current = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000
+    });
 
-    socketRef.current.emit('register_user', currentUser._id);
+    const registerUserRoom = () => {
+      if (currentUser?._id && socketRef.current) {
+        console.log('[Socket] Joining room for user:', currentUser._id);
+        socketRef.current.emit('register_user', currentUser._id);
+      }
+    };
+
+    socketRef.current.on('connect', registerUserRoom);
+    registerUserRoom();
+
+    // Re-register when tab gains focus or screen turns on (crucial for mobile Safari/Chrome)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        registerUserRoom();
+      }
+    };
+    window.addEventListener('focus', registerUserRoom);
+    document.addEventListener('visibilitychange', handleVisibility);
 
     socketRef.current.on('receive_message', (data) => {
       setMessages(prev => [...prev, data]);
@@ -226,6 +259,9 @@ export default function Home() {
     });
 
     return () => {
+      window.removeEventListener('focus', registerUserRoom);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      ringtone.stop();
       if (socketRef.current) {
         socketRef.current.disconnect();
       }

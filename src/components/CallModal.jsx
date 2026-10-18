@@ -4,6 +4,7 @@ import {
   UserPlus, Users, Volume2, ShieldCheck, Maximize2, Minimize2,
   Search, Check, X
 } from 'lucide-react';
+import { ringback } from '../utils/soundEffects';
 
 const RTC_CONFIG = {
   iceServers: [
@@ -120,8 +121,19 @@ export default function CallModal({
     };
   }, [isOpen, callRoom?.roomId]);
 
+  // Outgoing Ringback Sound
+  useEffect(() => {
+    if (callStatus === 'ringing') {
+      ringback.playRingback();
+    } else {
+      ringback.stop();
+    }
+    return () => ringback.stop();
+  }, [callStatus]);
+
   // Clean up all tracks and peer connections
   const cleanUpEverything = () => {
+    ringback.stop();
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(t => t.stop());
       localStreamRef.current = null;
@@ -147,6 +159,12 @@ export default function CallModal({
 
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current[targetSocketId] = pc;
+
+    // Ensure transceivers exist so screen sharing track addition/replacement always works
+    try {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+    } catch (e) {}
 
     // Add local media tracks
     if (localStreamRef.current) {
@@ -387,23 +405,43 @@ export default function CallModal({
         const screenTrack = screenStream.getVideoTracks()[0];
 
         // Replace outgoing video track on all peer connections
-        Object.values(peerConnectionsRef.current).forEach(pc => {
+        Object.values(peerConnectionsRef.current).forEach(async pc => {
           const senders = pc.getSenders();
           const videoSender = senders.find(s => s.track && s.track.kind === 'video');
           if (videoSender) {
             videoSender.replaceTrack(screenTrack);
+          } else {
+            pc.addTrack(screenTrack, screenStream);
+            try {
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              const targetSocketId = Object.keys(peerConnectionsRef.current).find(k => peerConnectionsRef.current[k] === pc);
+              socket?.emit('call_peer_offer', {
+                targetSocketId,
+                offer,
+                senderInfo: {
+                  userId: currentUser._id,
+                  fullName: currentUser.communityProfile?.fullName || currentUser.username,
+                  avatarUrl: currentUser.communityProfile?.avatarUrl
+                }
+              });
+            } catch (err) {
+              console.error('Error renegotiating screen track:', err);
+            }
           }
         });
 
-        // Show screen in local preview if desired
+        // Show screen in local preview
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = screenStream;
         }
 
         setIsScreenSharing(true);
+        setIsVideoOff(false);
         socket?.emit('call_peer_track_state', {
           roomId: callRoom?.roomId,
-          isScreenSharing: true
+          isScreenSharing: true,
+          isVideoOff: false
         });
 
         // Handle user stopping screen share via browser floating bar
@@ -423,6 +461,8 @@ export default function CallModal({
     }
 
     const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+    const hasActiveCamera = cameraTrack && cameraTrack.enabled;
+
     if (cameraTrack) {
       Object.values(peerConnectionsRef.current).forEach(pc => {
         const senders = pc.getSenders();
@@ -437,9 +477,11 @@ export default function CallModal({
     }
 
     setIsScreenSharing(false);
+    setIsVideoOff(!hasActiveCamera);
     socket?.emit('call_peer_track_state', {
       roomId: callRoom?.roomId,
-      isScreenSharing: false
+      isScreenSharing: false,
+      isVideoOff: !hasActiveCamera
     });
   };
 
@@ -1012,15 +1054,22 @@ export default function CallModal({
 // Sub-component for each Remote Peer Video Card
 function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
   const videoRef = useRef(null);
+  const audioRef = useRef(null);
 
   useEffect(() => {
     if (videoRef.current && peer.stream) {
       videoRef.current.srcObject = peer.stream;
+      videoRef.current.play().catch(e => console.log('Video play error:', e));
+    }
+    if (audioRef.current && peer.stream) {
+      audioRef.current.srcObject = peer.stream;
+      audioRef.current.play().catch(e => console.log('Audio play error:', e));
     }
   }, [peer.stream]);
 
   const name = peer.userInfo?.fullName || 'Remote Participant';
   const initial = name.charAt(0).toUpperCase();
+  const shouldShowVideo = Boolean(peer.isScreenSharing || !peer.isVideoOff);
 
   return (
     <div style={{
@@ -1040,18 +1089,23 @@ function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
         boxShadow: '0 0 60px rgba(0,0,0,0.9)'
       } : {})
     }}>
-      {!peer.isVideoOff ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: peer.isScreenSharing ? 'contain' : 'cover'
-          }}
-        />
-      ) : (
+      {/* Audio element always active so voice is never cut off */}
+      <audio ref={audioRef} autoPlay playsInline />
+
+      {/* Video element always mounted */}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: peer.isScreenSharing ? 'contain' : 'cover',
+          display: shouldShowVideo ? 'block' : 'none'
+        }}
+      />
+
+      {!shouldShowVideo && (
         <div style={{ textAlign: 'center' }}>
           <div style={{
             width: '90px',
