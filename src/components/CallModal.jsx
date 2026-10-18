@@ -38,6 +38,7 @@ export default function CallModal({
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
+  const iceCandidateQueues = useRef({}); // socketId -> Array of queued ICE candidates
   const timerRef = useRef(null);
 
   // Initialize Local Media & Room on Open
@@ -153,6 +154,21 @@ export default function CallModal({
 
   // Setup WebRTC Peer Connection Helper
   const createPeer = (targetSocketId, targetUserInfo) => {
+    // Immediately register peer in UI state so the participant card appears instantly
+    setPeers(prev => ({
+      ...prev,
+      [targetSocketId]: {
+        socketId: targetSocketId,
+        userId: targetUserInfo?.userId,
+        userInfo: targetUserInfo || prev[targetSocketId]?.userInfo,
+        stream: prev[targetSocketId]?.stream || null,
+        isAudioMuted: prev[targetSocketId]?.isAudioMuted || false,
+        isVideoOff: prev[targetSocketId]?.isVideoOff || false,
+        isScreenSharing: prev[targetSocketId]?.isScreenSharing || false
+      }
+    }));
+    setCallStatus('connected');
+
     if (peerConnectionsRef.current[targetSocketId]) {
       return peerConnectionsRef.current[targetSocketId];
     }
@@ -175,19 +191,31 @@ export default function CallModal({
 
     // Handle incoming remote stream tracks
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      setPeers(prev => ({
-        ...prev,
-        [targetSocketId]: {
-          socketId: targetSocketId,
-          userId: targetUserInfo?.userId,
-          userInfo: targetUserInfo || prev[targetSocketId]?.userInfo,
-          stream: remoteStream,
-          isAudioMuted: prev[targetSocketId]?.isAudioMuted || false,
-          isVideoOff: prev[targetSocketId]?.isVideoOff || false,
-          isScreenSharing: prev[targetSocketId]?.isScreenSharing || false
+      console.log('[WebRTC] ontrack received:', event.track.kind, event.streams);
+      let stream = event.streams && event.streams[0];
+      if (!stream) {
+        stream = new MediaStream([event.track]);
+      }
+      setPeers(prev => {
+        const existing = prev[targetSocketId];
+        let targetStream = existing?.stream;
+        if (!targetStream) {
+          targetStream = new MediaStream(stream.getTracks());
+        } else {
+          stream.getTracks().forEach(track => {
+            if (!targetStream.getTracks().some(t => t.id === track.id)) {
+              targetStream.addTrack(track);
+            }
+          });
         }
-      }));
+        return {
+          ...prev,
+          [targetSocketId]: {
+            ...existing,
+            stream: targetStream
+          }
+        };
+      });
       setCallStatus('connected');
     };
 
@@ -217,6 +245,7 @@ export default function CallModal({
       } catch (e) {}
       delete peerConnectionsRef.current[targetSocketId];
     }
+    delete iceCandidateQueues.current[targetSocketId];
     setPeers(prev => {
       const updated = { ...prev };
       delete updated[targetSocketId];
@@ -259,6 +288,14 @@ export default function CallModal({
 
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        
+        // Flush any queued ICE candidates
+        const queue = iceCandidateQueues.current[senderSocketId] || [];
+        while (queue.length > 0) {
+          const cand = queue.shift();
+          try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
+        }
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -283,6 +320,14 @@ export default function CallModal({
       if (pc) {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          
+          // Flush any queued ICE candidates
+          const queue = iceCandidateQueues.current[senderSocketId] || [];
+          while (queue.length > 0) {
+            const cand = queue.shift();
+            try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
+          }
+
           setCallStatus('connected');
         } catch (err) {
           console.error('[WebRTC] Error setting remote description:', err);
@@ -295,7 +340,14 @@ export default function CallModal({
       const pc = peerConnectionsRef.current[senderSocketId];
       if (pc && candidate) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } else {
+            if (!iceCandidateQueues.current[senderSocketId]) {
+              iceCandidateQueues.current[senderSocketId] = [];
+            }
+            iceCandidateQueues.current[senderSocketId].push(candidate);
+          }
         } catch (err) {
           console.error('[WebRTC] Error adding ICE candidate:', err);
         }
@@ -311,8 +363,8 @@ export default function CallModal({
           [socketId]: {
             ...prev[socketId],
             ...(isAudioMuted !== undefined ? { isAudioMuted } : {}),
-            ...(isVideoOff !== undefined ? { isVideoOff } : {}),
-            ...(isScreenSharing !== undefined ? { isScreenSharing } : {})
+            ...(isVideoOff !== undefined ? { isVideoOff: isScreenSharing ? false : isVideoOff } : {}),
+            ...(isScreenSharing !== undefined ? { isScreenSharing, isVideoOff: isScreenSharing ? false : prev[socketId]?.isVideoOff } : {})
           }
         };
       });

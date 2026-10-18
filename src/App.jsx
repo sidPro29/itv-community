@@ -43,7 +43,7 @@ function App() {
               <Route path="/members" element={<ProtectedRoute><Directory /></ProtectedRoute>} />
               <Route path="/members/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<Navigate to="/" replace />} />
-              <Route path="/messages" element={<Navigate to="/" replace />} />
+              <Route path="/messages" element={<ProtectedRoute><Home /></ProtectedRoute>} />
               <Route path="/upgrade" element={<ProtectedRoute><UpgradeCommunity /></ProtectedRoute>} />
             </Routes>
           </main>

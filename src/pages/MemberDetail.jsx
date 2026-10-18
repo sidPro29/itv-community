@@ -51,11 +51,7 @@ export default function MemberDetail() {
   };
 
   const handleConnectAction = (actionType) => {
-    if (member?.communityTier === 'free') {
-      navigate('/upgrade');
-    } else {
-      navigate(`/messages?recipient=${id}&action=${actionType}`);
-    }
+    navigate(`/?recipient=${id}&action=${actionType}`);
   };
 
   if (loading) {

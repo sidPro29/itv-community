@@ -8,7 +8,7 @@ import {
   Sparkles, MessageSquare, User, Shield, Briefcase, GraduationCap, Award, 
   FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, 
   Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming,
-  Users
+  Users, Search
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
@@ -118,6 +118,8 @@ export default function Home() {
   const [incomingCallRoom, setIncomingCallRoom] = useState(null);
   const [isGroupCallModalOpen, setIsGroupCallModalOpen] = useState(false);
   const [allMembers, setAllMembers] = useState([]);
+  const [contactTab, setContactTab] = useState('recent'); // 'recent' | 'all'
+  const [contactSearch, setContactSearch] = useState('');
   const [micMuted, setMicMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
 
@@ -285,7 +287,12 @@ export default function Home() {
       });
       if (res.ok) {
         const data = await res.json();
-        setAllMembers(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setAllMembers(list);
+        const filtered = list.filter(m => m._id?.toString() !== currentUser?._id?.toString());
+        if (!recipientIdFromQuery && !activeRecipient && conversations.length === 0 && filtered.length > 0) {
+          fetchRecipient(filtered[0]._id);
+        }
       }
     } catch (err) {
       console.error('Error fetching members for calling', err);
@@ -300,9 +307,12 @@ export default function Home() {
       });
       if (res.ok) {
         const data = await res.json();
-        setConversations(Array.isArray(data) ? data : []);
-        if (!recipientIdFromQuery && Array.isArray(data) && data.length > 0 && !activeRecipient) {
-          fetchRecipient(data[0]._id);
+        const convList = Array.isArray(data) ? data : [];
+        setConversations(convList);
+        if (convList.length === 0) {
+          setContactTab('all');
+        } else if (!recipientIdFromQuery && !activeRecipient) {
+          fetchRecipient(convList[0]._id);
         }
       }
     } catch (err) {
@@ -1342,17 +1352,89 @@ export default function Home() {
                 <Users size={14} /> + Group Call
               </button>
             </div>
+
+            {/* Tabs & Search for Contacts */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '12px' }}>
+              <button
+                onClick={() => setContactTab('recent')}
+                style={{
+                  flex: 1,
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: contactTab === 'recent' ? 'rgba(0, 242, 254, 0.18)' : 'transparent',
+                  color: contactTab === 'recent' ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Recent ({conversations.length})
+              </button>
+              <button
+                onClick={() => setContactTab('all')}
+                style={{
+                  flex: 1,
+                  padding: '6px 10px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: contactTab === 'all' ? 'rgba(0, 242, 254, 0.18)' : 'transparent',
+                  color: contactTab === 'all' ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                All Members ({allMembers.filter(m => m._id?.toString() !== currentUser?._id?.toString()).length})
+              </button>
+            </div>
+
+            {/* Quick Search */}
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <Search size={14} color="rgba(255,255,255,0.4)" style={{ position: 'absolute', left: '10px', top: '10px' }} />
+              <input
+                type="text"
+                value={contactSearch}
+                onChange={e => setContactSearch(e.target.value)}
+                placeholder="Search member by name..."
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '7px 10px 7px 30px',
+                  color: '#fff',
+                  fontSize: '0.82rem',
+                  outline: 'none'
+                }}
+              />
+            </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
-              {conversations.length === 0 ? (
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
-                  No contacts yet. Find members in the Directory to start messaging!
-                </p>
-              ) : (
-                conversations.map((contact) => {
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '240px', overflowY: 'auto', paddingRight: '4px' }}>
+              {(() => {
+                const otherMembers = allMembers.filter(m => m._id?.toString() !== currentUser?._id?.toString());
+                const displayed = (contactSearch.trim()
+                  ? otherMembers.filter(m => 
+                      (m.fullName || m.username || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
+                      (m.category || '').toLowerCase().includes(contactSearch.toLowerCase())
+                    )
+                  : (contactTab === 'recent' && conversations.length > 0)
+                    ? conversations
+                    : otherMembers
+                );
+
+                if (displayed.length === 0) {
+                  return (
+                    <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                      No members found.
+                    </p>
+                  );
+                }
+
+                return displayed.map((contact) => {
                   const isSelected = activeRecipient?._id === contact._id;
-                  
-                  // Extract full name and avatar cleanly from contact object
                   const contactName = contact.fullName || contact.communityProfile?.fullName || contact.username || 'Space Member';
                   const contactAvatar = contact.avatarUrl || contact.communityProfile?.avatarUrl || '';
                   const initialLetter = contactName ? contactName.charAt(0).toUpperCase() : 'U';
@@ -1391,21 +1473,21 @@ export default function Home() {
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <h5 style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <h5 style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }}>
                             {contactName}
                           </h5>
                           {contact.verificationStatus === 'verified' && (
                             <Shield size={12} style={{ color: '#38ef7d', flexShrink: 0 }} />
                           )}
                         </div>
-                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '2px' }}>
+                        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: '2px 0 0 0' }}>
                           {typeof contact.lastMessage === 'string' ? contact.lastMessage : contact.lastMessage?.content || `🚀 ${contact.category || 'Member'}`}
                         </p>
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
           </div>
 
