@@ -7,8 +7,11 @@ import {
   Send, PhoneCall, Video, Mic, MicOff, VideoOff, PhoneOff, ShieldAlert, 
   Sparkles, MessageSquare, User, Shield, Briefcase, GraduationCap, Award, 
   FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, 
-  Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming 
+  Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming,
+  Users
 } from 'lucide-react';
+import CallModal from '../components/CallModal';
+import GroupCallModal from '../components/GroupCallModal';
 
 const HARDCODED_VIDEO_URL = 'https://service.webvideocore.net/CL1olYogIrDWvwqiIKK7eHbBxDyYany25g-L4QOVH5_l5daXY9tfEZPDJS0YHgpW/a_td54sa9zvwgw.m3u8';
 
@@ -110,6 +113,10 @@ export default function Home() {
   // WebRTC Call States
   const [activeCall, setActiveCall] = useState(null);
   const [incomingCall, setIncomingCall] = useState(null);
+  const [activeCallRoom, setActiveCallRoom] = useState(null);
+  const [incomingCallRoom, setIncomingCallRoom] = useState(null);
+  const [isGroupCallModalOpen, setIsGroupCallModalOpen] = useState(false);
+  const [allMembers, setAllMembers] = useState([]);
   const [micMuted, setMicMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
 
@@ -183,6 +190,11 @@ export default function Home() {
       fetchConversations();
     });
 
+    socketRef.current.on('incoming_call_room', (data) => {
+      console.log('[Socket] incoming_call_room received:', data);
+      setIncomingCallRoom(data);
+    });
+
     socketRef.current.on('incoming_call', (data) => {
       setIncomingCall(data);
     });
@@ -221,12 +233,28 @@ export default function Home() {
     };
   }, [currentUser, API_URL]);
 
-  // Fetch Conversations List
+  // Fetch Conversations & Members List
   useEffect(() => {
     if (currentUser) {
       fetchConversations();
+      fetchAllMembers();
     }
   }, [currentUser]);
+
+  const fetchAllMembers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/members`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllMembers(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Error fetching members for calling', err);
+    }
+  };
 
   const fetchConversations = async () => {
     try {
@@ -368,51 +396,51 @@ export default function Home() {
     return pc;
   };
 
-  const startCall = async (type, recipient = activeRecipient) => {
+  const startCall = (type, recipient = activeRecipient) => {
     if (!recipient) return;
     setChatErrorMsg('');
+    const roomId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: type === 'video'
-      });
-      localStreamRef.current = stream;
+    socketRef.current?.emit('call_room_invite', {
+      roomId,
+      recipientIds: [recipient._id],
+      callerInfo: {
+        userId: currentUser._id,
+        fullName: currentUser.communityProfile?.fullName || currentUser.username,
+        avatarUrl: currentUser.communityProfile?.avatarUrl
+      },
+      callType: type
+    });
 
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
+    setActiveCallRoom({
+      roomId,
+      callType: type,
+      isInitiator: true,
+      recipient
+    });
+  };
 
-      const pc = createPeerConnection(recipient._id);
+  const handleStartGroupCall = ({ selectedUserIds, callType }) => {
+    if (!selectedUserIds || selectedUserIds.length === 0) return;
+    const roomId = 'group_call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
-      stream.getTracks().forEach(track => {
-        pc.addTrack(track, stream);
-      });
+    socketRef.current?.emit('call_room_invite', {
+      roomId,
+      recipientIds: selectedUserIds,
+      callerInfo: {
+        userId: currentUser._id,
+        fullName: currentUser.communityProfile?.fullName || currentUser.username,
+        avatarUrl: currentUser.communityProfile?.avatarUrl
+      },
+      callType
+    });
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      setActiveCall({
-        type,
-        status: 'ringing',
-        duration: 0,
-        recipient
-      });
-
-      socketRef.current?.emit('call_user', {
-        recipientId: recipient._id,
-        offer,
-        callType: type,
-        callerInfo: {
-          userId: currentUser._id,
-          fullName: currentUser.communityProfile?.fullName || currentUser.username,
-          avatarUrl: currentUser.communityProfile?.avatarUrl
-        }
-      });
-    } catch (err) {
-      console.error(err);
-      setChatErrorMsg('Microphone or Camera access denied: ' + err.message);
-    }
+    setActiveCallRoom({
+      roomId,
+      callType,
+      isInitiator: true,
+      selectedUserIds
+    });
   };
 
   const acceptIncomingCall = async () => {
@@ -1251,9 +1279,33 @@ export default function Home() {
           
           {/* 1. TOP RIGHT BLOCK: CONTACTS LIST (Max 4 contacts visible, scrollable overflow) */}
           <div className="glass-panel" style={{ padding: '20px', borderRadius: '20px' }}>
-            <h4 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MessageSquare size={18} style={{ color: 'var(--accent-cyan)' }} /> Contacts & Recent Messages
-            </h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h4 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MessageSquare size={18} style={{ color: 'var(--accent-cyan)' }} /> Contacts & Messages
+              </h4>
+              <button
+                onClick={() => setIsGroupCallModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(79, 172, 254, 0.15))',
+                  border: '1px solid rgba(0, 242, 254, 0.35)',
+                  color: 'var(--accent-cyan)',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.25), rgba(79, 172, 254, 0.25))'}
+                onMouseLeave={e => e.currentTarget.style.background = 'linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(79, 172, 254, 0.15))'}
+                title="Start a Group Call with multiple people"
+              >
+                <Users size={14} /> + Group Call
+              </button>
+            </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '260px', overflowY: 'auto', paddingRight: '4px' }}>
               {conversations.length === 0 ? (
@@ -1440,7 +1492,59 @@ export default function Home() {
 
       </div>
 
-      {/* --- INCOMING CALL NOTIFICATION MODAL --- */}
+      {/* --- INCOMING GROUP / ROOM CALL NOTIFICATION MODAL --- */}
+      {incomingCallRoom && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(3, 5, 12, 0.85)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }}>
+          <div className="glass-panel" style={{ padding: '32px', borderRadius: '24px', textAlign: 'center', maxWidth: '380px', width: '90%', border: '1px solid rgba(0, 242, 254, 0.4)', boxShadow: '0 20px 60px rgba(0,0,0,0.85)' }}>
+            <div style={{
+              width: '84px',
+              height: '84px',
+              borderRadius: '50%',
+              background: incomingCallRoom.callerInfo?.avatarUrl ? `url(${incomingCallRoom.callerInfo.avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+              margin: '0 auto 16px auto',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2.2rem',
+              fontWeight: 800,
+              color: '#fff',
+              border: '3px solid rgba(0, 242, 254, 0.5)'
+            }}>
+              {!incomingCallRoom.callerInfo?.avatarUrl && (incomingCallRoom.callerInfo?.fullName?.charAt(0).toUpperCase() || 'U')}
+            </div>
+            <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', margin: '0 0 6px 0' }}>{incomingCallRoom.callerInfo?.fullName || 'Space Member'}</h3>
+            <p style={{ color: 'var(--accent-cyan)', fontSize: '0.92rem', margin: '0 0 24px 0', fontWeight: 600 }}>
+              Incoming {incomingCallRoom.callType === 'video' ? 'Video' : 'Audio'} Call...
+            </p>
+
+            <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+              <button 
+                className="btn-secondary" 
+                style={{ background: '#ff4d4d', color: '#fff', flex: 1, padding: '12px', borderRadius: '14px', border: 'none', fontWeight: 700, cursor: 'pointer' }}
+                onClick={() => setIncomingCallRoom(null)}
+              >
+                Decline
+              </button>
+              <button 
+                className="btn-primary" 
+                style={{ background: '#38ef7d', color: '#000', flex: 1, padding: '12px', borderRadius: '14px', border: 'none', fontWeight: 800, cursor: 'pointer', boxShadow: '0 0 20px rgba(56, 239, 125, 0.4)' }}
+                onClick={() => {
+                  setActiveCallRoom({
+                    roomId: incomingCallRoom.roomId,
+                    callType: incomingCallRoom.callType,
+                    isInitiator: false
+                  });
+                  setIncomingCallRoom(null);
+                }}
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- INCOMING LEGACY 1-TO-1 CALL MODAL --- */}
       {incomingCall && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999 }}>
           <div className="glass-panel" style={{ padding: '30px', borderRadius: '24px', textAlign: 'center', maxWidth: '360px', width: '90%' }}>
@@ -1460,46 +1564,23 @@ export default function Home() {
         </div>
       )}
 
-      {/* --- ACTIVE WEBRTC CALL OVERLAY --- */}
-      {activeCall && (
-        <div style={{ position: 'fixed', inset: 0, background: '#05070f', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 99998 }}>
-          
-          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {activeCall.type === 'video' ? (
-              <>
-                <video ref={remoteVideoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                <video ref={localVideoRef} autoPlay playsInline muted style={{ position: 'absolute', bottom: '120px', right: '30px', width: '180px', height: '120px', borderRadius: '16px', objectFit: 'cover', border: '2px solid var(--accent-cyan)' }} />
-              </>
-            ) : (
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(135deg, #00f2fe, #7928ca)', margin: '0 auto 20px auto', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', fontWeight: 800, color: '#fff' }}>
-                  {activeCall.recipient?.fullName?.charAt(0).toUpperCase() || 'U'}
-                </div>
-                <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#fff' }}>{activeCall.recipient?.fullName}</h3>
-                <p style={{ color: 'var(--accent-cyan)', marginTop: '6px' }}>{activeCall.status === 'connected' ? 'Call in Progress...' : 'Ringing...'}</p>
-              </div>
-            )}
+      {/* --- GROUP CALL SELECTION MODAL --- */}
+      <GroupCallModal
+        isOpen={isGroupCallModalOpen}
+        onClose={() => setIsGroupCallModalOpen(false)}
+        members={allMembers.length > 0 ? allMembers : conversations}
+        onStartCall={handleStartGroupCall}
+      />
 
-            {/* Call Action Controls */}
-            <div style={{ position: 'absolute', bottom: '40px', display: 'flex', gap: '20px', alignItems: 'center', background: 'rgba(10, 14, 28, 0.85)', backdropFilter: 'blur(20px)', padding: '16px 30px', borderRadius: '40px', border: '1px solid var(--border-glass)' }}>
-              <button onClick={toggleMic} style={{ width: '50px', height: '50px', borderRadius: '50%', background: micMuted ? '#ff4d4d' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {micMuted ? <MicOff size={22} /> : <Mic size={22} />}
-              </button>
-
-              {activeCall.type === 'video' && (
-                <button onClick={toggleVideo} style={{ width: '50px', height: '50px', borderRadius: '50%', background: videoMuted ? '#ff4d4d' : 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {videoMuted ? <VideoOff size={22} /> : <Video size={22} />}
-                </button>
-              )}
-
-              <button onClick={endCall} style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#ff4d4d', color: '#fff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 20px rgba(255,77,77,0.5)' }}>
-                <PhoneOff size={26} />
-              </button>
-            </div>
-          </div>
-
-        </div>
-      )}
+      {/* --- ADVANCED WEBRTC MULTI-PEER CALL MODAL (1-to-1, Group, Screen Share, Invites) --- */}
+      <CallModal
+        isOpen={!!activeCallRoom}
+        onClose={() => setActiveCallRoom(null)}
+        currentUser={currentUser}
+        callRoom={activeCallRoom}
+        socket={socketRef.current}
+        allMembers={allMembers.length > 0 ? allMembers : conversations}
+      />
 
     </div>
   );
