@@ -2,17 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MonitorOff, 
   UserPlus, Users, Volume2, ShieldCheck, Maximize2, Minimize2,
-  Search, Check, X
+  Search, Check, X, Settings
 } from 'lucide-react';
 import { ringback } from '../utils/soundEffects';
-
-const RTC_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
-};
+import { RTC_CONFIG } from '../utils/webrtcConfig';
 
 export default function CallModal({
   isOpen,
@@ -33,6 +26,13 @@ export default function CallModal({
   const [inviteSearch, setInviteSearch] = useState('');
   const [invitedMap, setInvitedMap] = useState({});
   const [fullscreenVideoId, setFullscreenVideoId] = useState(null);
+  const [showInCallSettings, setShowInCallSettings] = useState(false);
+  const [availableAudioDevices, setAvailableAudioDevices] = useState([]);
+  const [availableVideoDevices, setAvailableVideoDevices] = useState([]);
+  const [availableOutputDevices, setAvailableOutputDevices] = useState([]);
+  const [activeAudioInput, setActiveAudioInput] = useState('');
+  const [activeVideoInput, setActiveVideoInput] = useState('');
+  const [activeAudioOutput, setActiveAudioOutput] = useState('');
 
   const localVideoRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -48,37 +48,39 @@ export default function CallModal({
     let mounted = true;
 
     async function initMedia() {
-      let stream = null;
+      let stream = callRoom?.initialStream || null;
 
-      // Smart fallback: try audio+video -> audio only -> video only -> empty stream
-      if (callRoom.callType === 'video') {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        } catch (err1) {
-          console.warn('Audio+Video failed, trying audio only:', err1);
+      if (!stream) {
+        // Smart fallback: try audio+video -> audio only -> video only -> empty stream
+        if (callRoom?.callType === 'video') {
           try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-            setIsVideoOff(true);
-          } catch (err2) {
-            console.warn('Audio failed, trying video only:', err2);
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          } catch (err1) {
+            console.warn('Audio+Video failed, trying audio only:', err1);
             try {
-              stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
-              setIsMicMuted(true);
-            } catch (err3) {
-              console.warn('No media devices available or blocked:', err3);
-              stream = new MediaStream();
+              stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
               setIsVideoOff(true);
-              setIsMicMuted(true);
+            } catch (err2) {
+              console.warn('Audio failed, trying video only:', err2);
+              try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+                setIsMicMuted(true);
+              } catch (err3) {
+                console.warn('No media devices available or blocked:', err3);
+                stream = new MediaStream();
+                setIsVideoOff(true);
+                setIsMicMuted(true);
+              }
             }
           }
-        }
-      } else {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        } catch (errAudio) {
-          console.warn('Audio stream acquisition failed:', errAudio);
-          stream = new MediaStream();
-          setIsMicMuted(true);
+        } else {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          } catch (errAudio) {
+            console.warn('Audio stream acquisition failed:', errAudio);
+            stream = new MediaStream();
+            setIsMicMuted(true);
+          }
         }
       }
 
@@ -90,7 +92,17 @@ export default function CallModal({
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      if (localVideoRef.current && stream.getVideoTracks().length > 0) {
+      const hasVideo = stream.getVideoTracks().length > 0;
+      const initialVideoOff = callRoom?.initialVideoOff !== undefined ? callRoom.initialVideoOff : (!hasVideo || callRoom?.callType === 'audio');
+      setIsVideoOff(initialVideoOff);
+
+      const initialMicMuted = callRoom?.initialMicMuted !== undefined ? callRoom.initialMicMuted : false;
+      setIsMicMuted(initialMicMuted);
+      if (initialMicMuted && stream.getAudioTracks()[0]) {
+        stream.getAudioTracks()[0].enabled = false;
+      }
+
+      if (localVideoRef.current && hasVideo && !initialVideoOff) {
         localVideoRef.current.srcObject = stream;
       }
 
@@ -101,11 +113,13 @@ export default function CallModal({
           userId: currentUser._id,
           fullName: currentUser.communityProfile?.fullName || currentUser.username,
           avatarUrl: currentUser.communityProfile?.avatarUrl,
-          category: currentUser.communityProfile?.category
+          category: currentUser.communityProfile?.category,
+          isVideoOff: initialVideoOff,
+          isAudioMuted: initialMicMuted
         }
       });
 
-      setCallStatus(callRoom.isInitiator ? 'ringing' : 'connected');
+      setCallStatus(callRoom.isInitiator && !callRoom.isRejoin ? 'ringing' : 'connected');
     }
 
     initMedia();
@@ -176,47 +190,67 @@ export default function CallModal({
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current[targetSocketId] = pc;
 
-    // Ensure transceivers exist so screen sharing track addition/replacement always works
-    try {
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-      pc.addTransceiver('video', { direction: 'sendrecv' });
-    } catch (e) {}
-
     // Add local media tracks
+    const addedTracks = new Set();
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current);
+        addedTracks.add(track.kind);
       });
+    }
+
+    // Ensure audio and video transceivers exist so we can always receive audio & video
+    // (Crucial for desktop users with no webcam: allows receiving remote video without sending)
+    if (!addedTracks.has('audio')) {
+      try { pc.addTransceiver('audio', { direction: 'recvonly' }); } catch (e) {}
+    }
+    if (!addedTracks.has('video')) {
+      try { pc.addTransceiver('video', { direction: 'recvonly' }); } catch (e) {}
     }
 
     // Handle incoming remote stream tracks
     pc.ontrack = (event) => {
       console.log('[WebRTC] ontrack received:', event.track.kind, event.streams);
-      let stream = event.streams && event.streams[0];
-      if (!stream) {
-        stream = new MediaStream([event.track]);
-      }
-      setPeers(prev => {
-        const existing = prev[targetSocketId];
-        let targetStream = existing?.stream;
-        if (!targetStream) {
-          targetStream = new MediaStream(stream.getTracks());
-        } else {
-          stream.getTracks().forEach(track => {
-            if (!targetStream.getTracks().some(t => t.id === track.id)) {
-              targetStream.addTrack(track);
-            }
-          });
-        }
-        return {
-          ...prev,
-          [targetSocketId]: {
-            ...existing,
-            stream: targetStream
+
+      const updatePeerStream = () => {
+        setPeers(prev => {
+          const existing = prev[targetSocketId];
+          const prevStream = existing?.stream;
+          let combinedTracks = [];
+
+          if (prevStream) {
+            combinedTracks = [...prevStream.getTracks()];
           }
-        };
-      });
-      setCallStatus('connected');
+          if (event.streams && event.streams[0]) {
+            event.streams[0].getTracks().forEach(t => {
+              if (!combinedTracks.some(ct => ct.id === t.id)) {
+                combinedTracks.push(t);
+              }
+            });
+          } else if (event.track) {
+            if (!combinedTracks.some(ct => ct.id === event.track.id)) {
+              combinedTracks.push(event.track);
+            }
+          }
+
+          return {
+            ...prev,
+            [targetSocketId]: {
+              ...existing,
+              stream: new MediaStream(combinedTracks)
+            }
+          };
+        });
+        setCallStatus('connected');
+      };
+
+      updatePeerStream();
+
+      // Listen for unmuting when media packets actually start flowing over UDP
+      event.track.onunmute = () => {
+        console.log('[WebRTC] Track unmuted:', event.track.kind);
+        updatePeerStream();
+      };
     };
 
     // Send ICE candidates to target
@@ -264,7 +298,10 @@ export default function CallModal({
 
       const pc = createPeer(socketId, userInfo);
       try {
-        const offer = await pc.createOffer();
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
         await pc.setLocalDescription(offer);
 
         socket.emit('call_peer_offer', {
@@ -273,7 +310,9 @@ export default function CallModal({
           senderInfo: {
             userId: currentUser._id,
             fullName: currentUser.communityProfile?.fullName || currentUser.username,
-            avatarUrl: currentUser.communityProfile?.avatarUrl
+            avatarUrl: currentUser.communityProfile?.avatarUrl,
+            isVideoOff: isVideoOff,
+            isAudioMuted: isMicMuted
           }
         });
       } catch (err) {
@@ -296,7 +335,10 @@ export default function CallModal({
           try { await pc.addIceCandidate(new RTCIceCandidate(cand)); } catch (e) {}
         }
 
-        const answer = await pc.createAnswer();
+        const answer = await pc.createAnswer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
         await pc.setLocalDescription(answer);
 
         socket.emit('call_peer_answer', {
@@ -305,7 +347,9 @@ export default function CallModal({
           senderInfo: {
             userId: currentUser._id,
             fullName: currentUser.communityProfile?.fullName || currentUser.username,
-            avatarUrl: currentUser.communityProfile?.avatarUrl
+            avatarUrl: currentUser.communityProfile?.avatarUrl,
+            isVideoOff: isVideoOff,
+            isAudioMuted: isMicMuted
           }
         });
       } catch (err) {
@@ -536,6 +580,77 @@ export default function CallModal({
       isVideoOff: !hasActiveCamera
     });
   };
+
+  // Switch microphone mid-call
+  const switchAudioInput = async (deviceId) => {
+    setActiveAudioInput(deviceId);
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: deviceId } }
+      });
+      const newTrack = newStream.getAudioTracks()[0];
+      if (localStreamRef.current) {
+        const oldTrack = localStreamRef.current.getAudioTracks()[0];
+        if (oldTrack) {
+          localStreamRef.current.removeTrack(oldTrack);
+          oldTrack.stop();
+        }
+        localStreamRef.current.addTrack(newTrack);
+        newTrack.enabled = !isMicMuted;
+      }
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        const senders = pc.getSenders();
+        const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+        if (audioSender) {
+          audioSender.replaceTrack(newTrack);
+        }
+      });
+    } catch (e) {
+      console.warn('Error switching mic:', e);
+    }
+  };
+
+  // Switch camera mid-call
+  const switchVideoInput = async (deviceId) => {
+    setActiveVideoInput(deviceId);
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } }
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (localStreamRef.current) {
+        const oldTrack = localStreamRef.current.getVideoTracks()[0];
+        if (oldTrack) {
+          localStreamRef.current.removeTrack(oldTrack);
+          oldTrack.stop();
+        }
+        localStreamRef.current.addTrack(newTrack);
+        newTrack.enabled = !isVideoOff;
+      }
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      Object.values(peerConnectionsRef.current).forEach(pc => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find(s => s.track && s.track.kind === 'video');
+        if (videoSender) {
+          videoSender.replaceTrack(newTrack);
+        }
+      });
+    } catch (e) {
+      console.warn('Error switching camera:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (showInCallSettings) {
+      navigator.mediaDevices.enumerateDevices().then(devices => {
+        setAvailableAudioDevices(devices.filter(d => d.kind === 'audioinput'));
+        setAvailableVideoDevices(devices.filter(d => d.kind === 'videoinput'));
+        setAvailableOutputDevices(devices.filter(d => d.kind === 'audiooutput'));
+      }).catch(console.warn);
+    }
+  }, [showInCallSettings]);
 
   // Send in-call invite to another person
   const handleInviteUser = (member) => {
@@ -908,6 +1023,27 @@ export default function CallModal({
           <UserPlus size={22} />
         </button>
 
+        {/* Device Settings Button */}
+        <button
+          onClick={() => setShowInCallSettings(true)}
+          title="Audio & Video Settings"
+          style={{
+            width: '52px',
+            height: '52px',
+            borderRadius: '50%',
+            background: showInCallSettings ? 'rgba(0, 242, 254, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+            color: showInCallSettings ? '#00f2fe' : '#fff',
+            border: showInCallSettings ? '1px solid #00f2fe' : 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          <Settings size={22} />
+        </button>
+
         {/* Leave / End Call */}
         <button
           onClick={handleHangup}
@@ -1092,6 +1228,141 @@ export default function CallModal({
         </div>
       )}
 
+      {/* --- IN-CALL DEVICE SETTINGS MODAL --- */}
+      {showInCallSettings && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(3, 7, 18, 0.75)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999999,
+          fontFamily: 'Inter, system-ui, sans-serif'
+        }}>
+          <div style={{
+            width: '90%',
+            maxWidth: '460px',
+            background: '#0d1326',
+            borderRadius: '20px',
+            border: '1px solid rgba(0, 242, 254, 0.3)',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '18px',
+            color: '#fff'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Settings size={18} color="#00f2fe" /> Call Device Settings
+              </h3>
+              <button
+                onClick={() => setShowInCallSettings(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '30px',
+                  height: '30px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Microphone Dropdown */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
+                MICROPHONE (INPUT)
+              </label>
+              <select
+                value={activeAudioInput}
+                onChange={e => switchAudioInput(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '10px',
+                  padding: '9px 12px',
+                  color: '#fff',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                {availableAudioDevices.length === 0 ? (
+                  <option value="">Default Microphone</option>
+                ) : (
+                  availableAudioDevices.map((d, i) => (
+                    <option key={d.deviceId || i} value={d.deviceId} style={{ background: '#0d1326', color: '#fff' }}>
+                      {d.label || `Microphone ${i + 1}`}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            {/* Camera Dropdown */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
+                CAMERA (VIDEO)
+              </label>
+              <select
+                value={activeVideoInput}
+                onChange={e => switchVideoInput(e.target.value)}
+                disabled={availableVideoDevices.length === 0}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '10px',
+                  padding: '9px 12px',
+                  color: '#fff',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                  cursor: availableVideoDevices.length === 0 ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {availableVideoDevices.length === 0 ? (
+                  <option value="">No Camera Found (Voice Only)</option>
+                ) : (
+                  availableVideoDevices.map((d, i) => (
+                    <option key={d.deviceId || i} value={d.deviceId} style={{ background: '#0d1326', color: '#fff' }}>
+                      {d.label || `Camera ${i + 1}`}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+              <button
+                onClick={() => setShowInCallSettings(false)}
+                style={{
+                  background: 'linear-gradient(135deg, #00f2fe, #4facfe)',
+                  color: '#000',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  padding: '9px 20px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Global CSS for rotating animation */}
       <style>{`
         @keyframes spin {
@@ -1107,21 +1378,84 @@ export default function CallModal({
 function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
 
+  // Attach and play audio & video whenever stream or its tracks update
   useEffect(() => {
-    if (videoRef.current && peer.stream) {
-      videoRef.current.srcObject = peer.stream;
-      videoRef.current.play().catch(e => console.log('Video play error:', e));
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!peer.stream) return;
+
+    const attachMedia = () => {
+      if (video && video.srcObject !== peer.stream) {
+        video.srcObject = peer.stream;
+        video.play().catch(e => console.log('Video play handled:', e));
+      }
+      if (audio && audio.srcObject !== peer.stream) {
+        audio.srcObject = peer.stream;
+        audio.play().catch(e => console.log('Audio play handled:', e));
+      }
+    };
+
+    attachMedia();
+    peer.stream.addEventListener('addtrack', attachMedia);
+    peer.stream.addEventListener('removetrack', attachMedia);
+
+    return () => {
+      peer.stream?.removeEventListener('addtrack', attachMedia);
+      peer.stream?.removeEventListener('removetrack', attachMedia);
+    };
+  }, [peer.stream]);
+
+  // Speaking / Voice Activity Detection (Web Audio API)
+  useEffect(() => {
+    if (!peer.stream || peer.stream.getAudioTracks().length === 0) return;
+    let ctx;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(peer.stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 64;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const checkVolume = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+        const avg = sum / dataArray.length;
+        setIsSpeaking(avg > 14);
+        animFrameRef.current = requestAnimationFrame(checkVolume);
+      };
+      checkVolume();
+    } catch (e) {
+      console.warn('Speaking detector error:', e);
     }
-    if (audioRef.current && peer.stream) {
-      audioRef.current.srcObject = peer.stream;
-      audioRef.current.play().catch(e => console.log('Audio play error:', e));
-    }
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (ctx && ctx.state !== 'closed') {
+        try { ctx.close(); } catch (e) {}
+      }
+    };
   }, [peer.stream]);
 
   const name = peer.userInfo?.fullName || 'Remote Participant';
   const initial = name.charAt(0).toUpperCase();
-  const shouldShowVideo = Boolean(peer.isScreenSharing || !peer.isVideoOff);
+
+  // Check if peer has a live video track
+  const hasLiveVideo = Boolean(
+    peer.stream && 
+    peer.stream.getVideoTracks().length > 0 && 
+    peer.stream.getVideoTracks().some(t => t.readyState === 'live')
+  );
+
+  const shouldShowVideo = Boolean(peer.isScreenSharing || (!peer.isVideoOff && hasLiveVideo));
 
   return (
     <div style={{
@@ -1129,11 +1463,12 @@ function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
       background: '#0d1326',
       borderRadius: '20px',
       overflow: 'hidden',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
+      border: isSpeaking ? '2px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+      boxShadow: isSpeaking ? '0 0 35px rgba(0, 242, 254, 0.45)' : '0 8px 32px rgba(0,0,0,0.4)',
+      transition: 'border 0.15s ease, box-shadow 0.15s ease',
       ...(isFullscreen ? {
         position: 'fixed',
         inset: '20px',
@@ -1144,11 +1479,15 @@ function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
       {/* Audio element always active so voice is never cut off */}
       <audio ref={audioRef} autoPlay playsInline />
 
-      {/* Video element always mounted */}
+      {/* Video element always mounted, MUTED to prevent browser autoplay blocks & audio loop */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
+        muted
+        onLoadedMetadata={() => {
+          videoRef.current?.play().catch(e => console.log('Video play metadata handled:', e));
+        }}
         style={{
           width: '100%',
           height: '100%',
@@ -1163,19 +1502,23 @@ function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
             width: '90px',
             height: '90px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, #7928ca 0%, #ff0080 100%)',
+            background: isSpeaking ? 'linear-gradient(135deg, #00f2fe 0%, #7928ca 100%)' : 'linear-gradient(135deg, #7928ca 0%, #ff0080 100%)',
             color: '#fff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '2.4rem',
             fontWeight: 900,
-            margin: '0 auto 12px auto'
+            margin: '0 auto 12px auto',
+            boxShadow: isSpeaking ? '0 0 25px rgba(0, 242, 254, 0.6)' : 'none',
+            transition: 'all 0.2s ease'
           }}>
             {initial}
           </div>
           <p style={{ fontWeight: 700, margin: 0, fontSize: '1.05rem' }}>{name}</p>
-          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)' }}>Camera Off</span>
+          <span style={{ fontSize: '0.8rem', color: isSpeaking ? '#00f2fe' : 'rgba(255,255,255,0.5)' }}>
+            {isSpeaking ? 'Speaking...' : (peer.isVideoOff ? 'Camera Off' : 'Connecting Video...')}
+          </span>
         </div>
       )}
 
@@ -1195,6 +1538,11 @@ function RemotePeerCard({ peer, isFullscreen, onToggleFullscreen }) {
         fontWeight: 700
       }}>
         <span>{name}</span>
+        {isSpeaking && (
+          <span style={{ color: '#00f2fe', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Volume2 size={12} /> Speaking
+          </span>
+        )}
         {peer.isScreenSharing && (
           <span style={{ color: '#00f2fe', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Monitor size={12} /> Presenting Screen

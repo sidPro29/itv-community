@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
+import DeviceSetupModal from '../components/DeviceSetupModal';
 import { ringtone } from '../utils/soundEffects';
 
 const HARDCODED_VIDEO_URL = 'https://service.webvideocore.net/CL1olYogIrDWvwqiIKK7eHbBxDyYany25g-L4QOVH5_l5daXY9tfEZPDJS0YHgpW/a_td54sa9zvwgw.m3u8';
@@ -116,6 +117,8 @@ export default function Home() {
   const [incomingCall, setIncomingCall] = useState(null);
   const [activeCallRoom, setActiveCallRoom] = useState(null);
   const [incomingCallRoom, setIncomingCallRoom] = useState(null);
+  const [setupModalConfig, setSetupModalConfig] = useState(null);
+  const [liveChatCall, setLiveChatCall] = useState(null);
   const [isGroupCallModalOpen, setIsGroupCallModalOpen] = useState(false);
   const [allMembers, setAllMembers] = useState([]);
   const [contactTab, setContactTab] = useState('recent'); // 'recent' | 'all'
@@ -228,6 +231,15 @@ export default function Home() {
     socketRef.current.on('incoming_call_room', (data) => {
       console.log('[Socket] incoming_call_room received:', data);
       setIncomingCallRoom(data);
+    });
+
+    socketRef.current.on('active_call_update', (callData) => {
+      console.log('[Socket] active_call_update received:', callData);
+      if (callData.isActive && !callData.ended) {
+        setLiveChatCall(callData);
+      } else {
+        setLiveChatCall(null);
+      }
     });
 
     socketRef.current.on('incoming_call', (data) => {
@@ -447,22 +459,12 @@ export default function Home() {
     setChatErrorMsg('');
     const roomId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
-    socketRef.current?.emit('call_room_invite', {
-      roomId,
-      recipientIds: [recipient._id],
-      callerInfo: {
-        userId: currentUser._id,
-        fullName: currentUser.communityProfile?.fullName || currentUser.username,
-        avatarUrl: currentUser.communityProfile?.avatarUrl
-      },
-      callType: type
-    });
-
-    setActiveCallRoom({
+    setSetupModalConfig({
       roomId,
       callType: type,
+      recipient,
       isInitiator: true,
-      recipient
+      isRejoin: false
     });
   };
 
@@ -470,23 +472,70 @@ export default function Home() {
     if (!selectedUserIds || selectedUserIds.length === 0) return;
     const roomId = 'group_call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
-    socketRef.current?.emit('call_room_invite', {
-      roomId,
-      recipientIds: selectedUserIds,
-      callerInfo: {
-        userId: currentUser._id,
-        fullName: currentUser.communityProfile?.fullName || currentUser.username,
-        avatarUrl: currentUser.communityProfile?.avatarUrl
-      },
-      callType
-    });
-
-    setActiveCallRoom({
+    setSetupModalConfig({
       roomId,
       callType,
+      selectedUserIds,
       isInitiator: true,
-      selectedUserIds
+      isRejoin: false
     });
+  };
+
+  const handleJoinActiveCall = (callData) => {
+    setSetupModalConfig({
+      roomId: callData.roomId,
+      callType: callData.callType || 'video',
+      recipient: activeRecipient,
+      callerInfo: callData.callerInfo,
+      isInitiator: false,
+      isRejoin: true
+    });
+  };
+
+  const handleSetupCompleted = ({ selectedAudioId, selectedVideoId, isMicMuted, isVideoOff, stream }) => {
+    if (!setupModalConfig) return;
+
+    if (setupModalConfig.isInitiator && !setupModalConfig.isRejoin) {
+      if (setupModalConfig.selectedUserIds) {
+        socketRef.current?.emit('call_room_invite', {
+          roomId: setupModalConfig.roomId,
+          recipientIds: setupModalConfig.selectedUserIds,
+          callerInfo: {
+            userId: currentUser._id,
+            fullName: currentUser.communityProfile?.fullName || currentUser.username,
+            avatarUrl: currentUser.communityProfile?.avatarUrl
+          },
+          callType: setupModalConfig.callType
+        });
+      } else if (setupModalConfig.recipient) {
+        socketRef.current?.emit('call_room_invite', {
+          roomId: setupModalConfig.roomId,
+          recipientIds: [setupModalConfig.recipient._id],
+          callerInfo: {
+            userId: currentUser._id,
+            fullName: currentUser.communityProfile?.fullName || currentUser.username,
+            avatarUrl: currentUser.communityProfile?.avatarUrl
+          },
+          callType: setupModalConfig.callType
+        });
+      }
+    }
+
+    setActiveCallRoom({
+      roomId: setupModalConfig.roomId,
+      callType: setupModalConfig.callType,
+      isInitiator: setupModalConfig.isInitiator,
+      isRejoin: setupModalConfig.isRejoin,
+      recipient: setupModalConfig.recipient,
+      selectedUserIds: setupModalConfig.selectedUserIds,
+      initialStream: stream,
+      initialMicMuted: isMicMuted,
+      initialVideoOff: isVideoOff,
+      selectedAudioId,
+      selectedVideoId
+    });
+
+    setSetupModalConfig(null);
   };
 
   const acceptIncomingCall = async () => {
@@ -1548,6 +1597,62 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* Slack-style Live Call in Progress Banner */}
+                {liveChatCall && liveChatCall.isActive && !activeCallRoom && (
+                  <div style={{
+                    margin: '10px 16px 0 16px',
+                    padding: '10px 16px',
+                    background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(121, 40, 202, 0.2))',
+                    border: '1px solid rgba(0, 242, 254, 0.4)',
+                    borderRadius: '14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 4px 20px rgba(0, 242, 254, 0.2)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        background: '#38ef7d',
+                        boxShadow: '0 0 10px #38ef7d'
+                      }} />
+                      <div>
+                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>
+                          Live Call in Progress ({liveChatCall.participantCount || 1} on call)
+                        </span>
+                        <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
+                          {liveChatCall.participants?.map(p => p.fullName || p.username).join(', ') || 'Call is active'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleJoinActiveCall(liveChatCall)}
+                      style={{
+                        background: 'linear-gradient(135deg, #00f2fe, #4facfe)',
+                        color: '#000',
+                        fontWeight: 800,
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '7px 16px',
+                        fontSize: '0.82rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 0 15px rgba(0, 242, 254, 0.35)',
+                        transition: 'transform 0.15s ease'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                      <PhoneCall size={13} /> Rejoin Call
+                    </button>
+                  </div>
+                )}
+
                 {/* Chat Messages Thread (Full width) */}
                 <div ref={chatContainerRef} style={{ flex: 1, padding: '16px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
                   {loadingMsgs ? (
@@ -1647,10 +1752,13 @@ export default function Home() {
                 className="btn-primary" 
                 style={{ background: '#38ef7d', color: '#000', flex: 1, padding: '12px', borderRadius: '14px', border: 'none', fontWeight: 800, cursor: 'pointer', boxShadow: '0 0 20px rgba(56, 239, 125, 0.4)' }}
                 onClick={() => {
-                  setActiveCallRoom({
+                  setSetupModalConfig({
                     roomId: incomingCallRoom.roomId,
                     callType: incomingCallRoom.callType,
-                    isInitiator: false
+                    recipient: activeRecipient,
+                    callerInfo: incomingCallRoom.callerInfo,
+                    isInitiator: false,
+                    isRejoin: false
                   });
                   setIncomingCallRoom(null);
                 }}
@@ -1681,6 +1789,15 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* --- PRE-CALL DEVICE & PERMISSIONS SETUP MODAL (Discord Style) --- */}
+      <DeviceSetupModal
+        isOpen={!!setupModalConfig}
+        onClose={() => setSetupModalConfig(null)}
+        callRoom={setupModalConfig}
+        currentUser={currentUser}
+        onJoinCall={handleSetupCompleted}
+      />
 
       {/* --- GROUP CALL SELECTION MODAL --- */}
       <GroupCallModal
