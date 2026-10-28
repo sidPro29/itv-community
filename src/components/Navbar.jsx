@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Users, MessageSquare, UserCheck, Shield, ExternalLink, LogOut, Sparkles, Bell, Check, Clock } from 'lucide-react';
+import { Users, MessageSquare, UserCheck, Shield, ExternalLink, LogOut, Sparkles, Bell, Check, Clock, Calendar } from 'lucide-react';
 import './Navbar.css';
 
 export default function Navbar() {
@@ -88,6 +88,9 @@ export default function Navbar() {
           <div className="navbar-links">
             <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>
               <UserCheck size={18} /> Home
+            </Link>
+            <Link to="/schedule" className={`nav-link ${location.pathname === '/schedule' ? 'active' : ''}`}>
+              <Calendar size={18} /> Meetings
             </Link>
             <Link to="/members" className={`nav-link ${location.pathname === '/members' ? 'active' : ''}`}>
               <Users size={18} /> Directory

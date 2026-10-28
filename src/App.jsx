@@ -8,6 +8,7 @@ import Home from './pages/Home';
 import Directory from './pages/Directory';
 import MemberDetail from './pages/MemberDetail';
 import UpgradeCommunity from './pages/UpgradeCommunity';
+import ScheduleMeetings from './pages/ScheduleMeetings';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -40,6 +41,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+              <Route path="/schedule" element={<ProtectedRoute><ScheduleMeetings /></ProtectedRoute>} />
               <Route path="/members" element={<ProtectedRoute><Directory /></ProtectedRoute>} />
               <Route path="/members/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<Navigate to="/" replace />} />
