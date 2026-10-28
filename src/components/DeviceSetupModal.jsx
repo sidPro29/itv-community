@@ -82,8 +82,8 @@ export default function DeviceSetupModal({
     setPermissionError('');
 
     const constraints = {
-      audio: audioId ? { deviceId: { exact: audioId } } : true,
-      video: !forceVideoOff ? (videoId ? { deviceId: { exact: videoId }, width: { ideal: 1280 }, height: { ideal: 720 } } : true) : false
+      audio: audioId ? { deviceId: { ideal: audioId } } : true,
+      video: !forceVideoOff ? (videoId ? { deviceId: { ideal: videoId }, width: { ideal: 1280 }, height: { ideal: 720 } } : true) : false
     };
 
     try {
@@ -94,7 +94,7 @@ export default function DeviceSetupModal({
         // Fallback: If video failed (e.g. no camera attached like Mac monitor), try audio only
         console.warn('Requested constraints failed, trying audio fallback:', err1);
         stream = await navigator.mediaDevices.getUserMedia({
-          audio: audioId ? { deviceId: { exact: audioId } } : true,
+          audio: audioId ? { deviceId: { ideal: audioId } } : true,
           video: false
         });
         setIsVideoOff(true);
@@ -218,16 +218,39 @@ export default function DeviceSetupModal({
   };
 
   const handleProceed = () => {
-    // Pass the prepared stream or settings
+    // Safely transfer the live media stream without letting cleanupMedia kill its tracks
+    const streamToTransfer = currentStreamRef.current;
+    currentStreamRef.current = null; // Detach so onClose -> cleanupMedia doesn't stop the tracks!
+
+    // Apply initial mute/camera state to tracks
+    if (streamToTransfer) {
+      if (isMicMuted) {
+        streamToTransfer.getAudioTracks().forEach(t => { t.enabled = false; });
+      }
+      if (isVideoOff) {
+        streamToTransfer.getVideoTracks().forEach(t => { t.enabled = false; });
+      }
+    }
+
+    // Stop audio meter loop & audioContext
+    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try { audioContextRef.current.close(); } catch (e) {}
+      audioContextRef.current = null;
+    }
+    if (videoPreviewRef.current) {
+      videoPreviewRef.current.srcObject = null;
+    }
+
     onJoinCall({
       selectedAudioId: selectedAudioInput,
       selectedVideoId: selectedVideoInput,
+      selectedAudioOutput: selectedAudioOutput,
       isMicMuted,
       isVideoOff,
-      stream: currentStreamRef.current
+      stream: streamToTransfer
     });
-    // Stop local preview loop without killing tracks yet
-    if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+
     onClose();
   };
 

@@ -30,7 +30,7 @@ export default function Login() {
         if (!hasSub) {
           setSubRequiredError(true);
         } else {
-          navigate('/members');
+          navigate('/');
         }
       }
     } catch (err) {
@@ -49,7 +49,7 @@ export default function Login() {
     try {
       const meData = await verify2FA(email, code);
       if (meData && meData.isSubscribed) {
-        navigate('/members');
+        navigate('/');
       } else {
         setSubRequiredError(true);
       }

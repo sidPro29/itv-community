@@ -8,7 +8,7 @@ import {
   Sparkles, MessageSquare, User, Shield, Briefcase, GraduationCap, Award, 
   FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, 
   Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming,
-  Users, Search
+  Users, Search, Camera
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
@@ -492,7 +492,7 @@ export default function Home() {
     });
   };
 
-  const handleSetupCompleted = ({ selectedAudioId, selectedVideoId, isMicMuted, isVideoOff, stream }) => {
+  const handleSetupCompleted = ({ selectedAudioId, selectedVideoId, selectedAudioOutput, isMicMuted, isVideoOff, stream }) => {
     if (!setupModalConfig) return;
 
     if (setupModalConfig.isInitiator && !setupModalConfig.isRejoin) {
@@ -532,7 +532,8 @@ export default function Home() {
       initialMicMuted: isMicMuted,
       initialVideoOff: isVideoOff,
       selectedAudioId,
-      selectedVideoId
+      selectedVideoId,
+      selectedAudioOutput
     });
 
     setSetupModalConfig(null);
@@ -700,6 +701,17 @@ export default function Home() {
     try {
       const fileUrl = await uploadFileToServer(file);
       setAvatarUrl(fileUrl);
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/community/profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': token
+        },
+        body: JSON.stringify({ avatarUrl: fileUrl })
+      });
+      await refreshProfile();
+      setProfileSuccessMsg('Profile picture updated successfully!');
     } catch (err) {
       setProfileErrorMsg('Avatar upload error: ' + err.message);
     } finally {
@@ -715,6 +727,17 @@ export default function Home() {
     try {
       const fileUrl = await uploadFileToServer(file);
       setCoverUrl(fileUrl);
+      const token = localStorage.getItem('token');
+      await fetch(`${API_URL}/community/profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-auth-token': token
+        },
+        body: JSON.stringify({ coverUrl: fileUrl })
+      });
+      await refreshProfile();
+      setProfileSuccessMsg('Cover banner updated successfully!');
     } catch (err) {
       setProfileErrorMsg('Cover banner upload error: ' + err.message);
     } finally {
@@ -845,29 +868,92 @@ export default function Home() {
           height: '115px',
           background: coverUrl ? `url(${coverUrl}) center/cover` : 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(121, 40, 202, 0.35) 100%)',
           position: 'relative'
-        }} />
+        }}>
+          <label style={{
+            position: 'absolute',
+            top: '12px',
+            left: '16px',
+            background: 'rgba(0, 0, 0, 0.65)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '20px',
+            padding: '5px 14px',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            color: '#fff',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            transition: 'background 0.2s ease',
+            zIndex: 5
+          }}>
+            <Camera size={13} color="#00f2fe" />
+            {uploadingCover ? 'Uploading Banner...' : 'Change Banner'}
+            <input 
+              type="file" 
+              accept="image/*" 
+              style={{ display: 'none' }} 
+              onChange={handleCoverFileUpload} 
+              disabled={uploadingCover}
+            />
+          </label>
+        </div>
 
         {/* Left Column Content: Avatar, Name, Single Badge, Location & Bio (Guaranteed 10px gap before Video Player) */}
         <div style={{ padding: `0 ${heroRightPadding}px 20px 28px`, position: 'relative', marginTop: '-42px', width: '100%', boxSizing: 'border-box' }}>
           
           {/* Avatar & Name Header */}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', marginBottom: '12px' }}>
-            <div style={{
-              width: '92px',
-              height: '92px',
-              borderRadius: '50%',
-              background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
-              border: '4px solid var(--bg-dark)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2.3rem',
-              fontWeight: 800,
-              color: '#fff',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
-              flexShrink: 0
-            }}>
-              {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
+            <div style={{ position: 'relative' }}>
+              <div style={{
+                width: '92px',
+                height: '92px',
+                borderRadius: '50%',
+                background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+                border: '4px solid var(--bg-dark)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '2.3rem',
+                fontWeight: 800,
+                color: '#fff',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                flexShrink: 0
+              }}>
+                {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
+              </div>
+
+              {/* One-click Avatar Photo Change Overlay */}
+              <label 
+                title="Change Profile Picture"
+                style={{
+                  position: 'absolute',
+                  bottom: '2px',
+                  right: '2px',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #00f2fe, #4facfe)',
+                  border: '2px solid #070a18',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#000',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.6)'
+                }}
+              >
+                <Camera size={15} />
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  style={{ display: 'none' }} 
+                  onChange={handleAvatarFileUpload} 
+                  disabled={uploadingAvatar}
+                />
+              </label>
             </div>
 
             <div style={{ marginBottom: '4px' }}>
@@ -1133,6 +1219,63 @@ export default function Home() {
             /* --- PROFILE EDIT MODE FORM (FULL SECTIONS COMPREHENSIVE FORM) --- */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               
+              {/* Section 0: Profile Picture & Banner Graphic */}
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '20px' }}>
+                <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Camera size={20} style={{ color: 'var(--accent-cyan)' }} /> Profile Picture & Cover Banner
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  {/* Avatar upload */}
+                  <div>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0', display: 'block', marginBottom: '8px' }}>
+                      Profile Picture (Avatar)
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '50%',
+                        background: avatarUrl ? `url(${avatarUrl}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+                        border: '2px solid rgba(0, 242, 254, 0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 800,
+                        color: '#fff',
+                        flexShrink: 0
+                      }}>
+                        {!avatarUrl && (fullName ? fullName.charAt(0).toUpperCase() : 'U')}
+                      </div>
+                      <label className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <Upload size={14} /> {uploadingAvatar ? 'Uploading...' : 'Upload Picture'}
+                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarFileUpload} disabled={uploadingAvatar} />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Banner upload */}
+                  <div>
+                    <label style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0', display: 'block', marginBottom: '8px' }}>
+                      Cover Banner Graphic
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div style={{
+                        width: '90px',
+                        height: '45px',
+                        borderRadius: '10px',
+                        background: coverUrl ? `url(${coverUrl}) center/cover` : 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(121, 40, 202, 0.35) 100%)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        flexShrink: 0
+                      }} />
+                      <label className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <Upload size={14} /> {uploadingCover ? 'Uploading...' : 'Upload Banner'}
+                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleCoverFileUpload} disabled={uploadingCover} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Section 1: Basic Info */}
               <div className="glass-panel" style={{ padding: '24px', borderRadius: '20px' }}>
                 <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px' }}>1. Basic Info & Category</h4>
@@ -1787,6 +1930,62 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* --- GLOBAL SLACK-STYLE REJOIN BANNER (Visible on screen after refresh or disconnect) --- */}
+      {liveChatCall && liveChatCall.isActive && !activeCallRoom && !setupModalConfig && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          background: 'linear-gradient(135deg, rgba(13, 19, 38, 0.95), rgba(7, 10, 25, 0.98))',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid #00f2fe',
+          borderRadius: '24px',
+          padding: '10px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          boxShadow: '0 8px 32px rgba(0, 242, 254, 0.35)',
+          color: '#fff'
+        }}>
+          <div style={{
+            width: '10px',
+            height: '10px',
+            borderRadius: '50%',
+            background: '#38ef7d',
+            boxShadow: '0 0 10px #38ef7d'
+          }} />
+          <div>
+            <span style={{ fontWeight: 800, fontSize: '0.9rem', color: '#fff' }}>
+              Live Call in Progress ({liveChatCall.participantCount || 1} online)
+            </span>
+            <p style={{ margin: '1px 0 0 0', fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>
+              {liveChatCall.participants?.map(p => p.fullName || p.username).join(', ') || 'Call is active'}
+            </p>
+          </div>
+          <button
+            onClick={() => handleJoinActiveCall(liveChatCall)}
+            style={{
+              background: 'linear-gradient(135deg, #00f2fe, #4facfe)',
+              color: '#000',
+              fontWeight: 800,
+              border: 'none',
+              borderRadius: '16px',
+              padding: '8px 18px',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 0 15px rgba(0, 242, 254, 0.5)'
+            }}
+          >
+            <PhoneCall size={14} /> Join Call
+          </button>
         </div>
       )}
 
