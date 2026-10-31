@@ -6,7 +6,7 @@ import {
   Calendar as CalendarIcon, Clock, Video, Mic, Plus, Users, Search, 
   Check, X, PhoneCall, Copy, Trash2, Shield, Sparkles, 
   ExternalLink, AlertCircle, Share2, ChevronLeft, ChevronRight, 
-  ChevronDown, Bell, Link as LinkIcon, Radio
+  ChevronDown, Bell, Link as LinkIcon, Radio, Edit2
 } from 'lucide-react';
 import DeviceSetupModal from '../components/DeviceSetupModal';
 import CallModal from '../components/CallModal';
@@ -49,6 +49,7 @@ export default function ScheduleMeetings() {
 
   // Schedule Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingCallId, setEditingCallId] = useState(null);
   const [modalTitle, setModalTitle] = useState('Brainstorm Session');
   const [modalDate, setModalDate] = useState('');
   const [modalType, setModalType] = useState('important');
@@ -280,25 +281,77 @@ export default function ScheduleMeetings() {
     });
   };
 
-  // Open Schedule Modal for a given date
+  // Open Schedule Modal for a given date (New Meeting)
   const openScheduleModal = (dateToUse = selectedDate) => {
-    const targetDate = dateToUse instanceof Date ? dateToUse : new Date(dateToUse);
+    setEditingCallId(null);
+    const now = new Date();
+    let targetDate = dateToUse instanceof Date ? new Date(dateToUse.getTime()) : new Date(dateToUse);
+
+    // If selected date is in the past, reset to today
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const targetDateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    if (targetDateStart < todayStart) {
+      targetDate = new Date();
+    }
+
     const y = targetDate.getFullYear();
     const m = String(targetDate.getMonth() + 1).padStart(2, '0');
     const d = String(targetDate.getDate()).padStart(2, '0');
     setModalDate(`${y}-${m}-${d}`);
 
-    // Set reasonable times
-    const now = new Date();
-    const currentH = String(now.getHours() + 1).padStart(2, '0');
-    setModalStartTime(`${currentH}:00`);
-    const endH = String(now.getHours() + 2).padStart(2, '0');
-    setModalEndTime(`${endH}:00`);
+    // If target date is today, start time must be in future (next 15-min interval)
+    let startHour = 11;
+    let startMin = 0;
+    if (targetDateStart.getTime() <= todayStart.getTime()) {
+      const nextQuarter = new Date(Math.ceil(now.getTime() / (15 * 60 * 1000)) * (15 * 60 * 1000) + 15 * 60 * 1000);
+      startHour = nextQuarter.getHours();
+      startMin = nextQuarter.getMinutes();
+    }
+    const startHStr = String(startHour).padStart(2, '0');
+    const startMStr = String(startMin).padStart(2, '0');
+    setModalStartTime(`${startHStr}:${startMStr}`);
+
+    const endQuarter = new Date(new Date().setHours(startHour, startMin + 30, 0, 0));
+    const endHStr = String(endQuarter.getHours()).padStart(2, '0');
+    const endMStr = String(endQuarter.getMinutes()).padStart(2, '0');
+    setModalEndTime(`${endHStr}:${endMStr}`);
 
     setModalTitle('Brainstorm Session');
     setModalType('important');
     setModalCallType('video');
     setModalNote('');
+    setErrorMsg('');
+    setShowMemberPicker(false);
+    setIsModalOpen(true);
+  };
+
+  // Open Schedule Modal to Edit existing meeting (Host only)
+  const openEditModal = (call) => {
+    setEditingCallId(call._id);
+    const callDate = new Date(call.scheduledAt);
+    const y = callDate.getFullYear();
+    const m = String(callDate.getMonth() + 1).padStart(2, '0');
+    const d = String(callDate.getDate()).padStart(2, '0');
+    setModalDate(`${y}-${m}-${d}`);
+
+    const startH = String(callDate.getHours()).padStart(2, '0');
+    const startM = String(callDate.getMinutes()).padStart(2, '0');
+    setModalStartTime(`${startH}:${startM}`);
+
+    const endDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
+    const endH = String(endDate.getHours()).padStart(2, '0');
+    const endM = String(endDate.getMinutes()).padStart(2, '0');
+    setModalEndTime(`${endH}:${endM}`);
+
+    setModalTitle(call.title || 'Meeting');
+    setModalNote(call.description || '');
+    setModalCallType(call.callType || 'video');
+
+    const participantIds = Array.isArray(call.participants)
+      ? call.participants.map(p => (typeof p === 'object' ? p._id : p)).filter(Boolean)
+      : [];
+    setSelectedParticipants(participantIds);
+
     setErrorMsg('');
     setShowMemberPicker(false);
     setIsModalOpen(true);
@@ -321,7 +374,7 @@ export default function ScheduleMeetings() {
             'Content-Type': 'application/json',
             'x-auth-token': token
           },
-          body: JSON.stringify({ start, end })
+          body: JSON.stringify({ start, end, excludeCallId: editingCallId })
         });
 
         if (res.ok) {
@@ -340,7 +393,7 @@ export default function ScheduleMeetings() {
     }, 200);
 
     return () => clearTimeout(timer);
-  }, [isModalOpen, modalDate, modalStartTime, modalEndTime, API_URL]);
+  }, [isModalOpen, modalDate, modalStartTime, modalEndTime, editingCallId, API_URL]);
 
   const handleToggleMember = (memberId) => {
     // If user is busy/collided at this time, cannot invite them
@@ -393,8 +446,8 @@ export default function ScheduleMeetings() {
     });
   };
 
-  // Create Scheduled Call
-  const handleCreateMeeting = async (e) => {
+  // Save (Create or Update) Scheduled Call
+  const handleSaveMeeting = async (e) => {
     e.preventDefault();
     if (!modalTitle.trim()) {
       setErrorMsg('Please enter a meeting title.');
@@ -405,6 +458,18 @@ export default function ScheduleMeetings() {
       return;
     }
 
+    const scheduledDateTime = new Date(`${modalDate}T${modalStartTime}:00`);
+    if (isNaN(scheduledDateTime.getTime())) {
+      setErrorMsg('Please select a valid date and time.');
+      return;
+    }
+
+    // Meeting must be in future (allow 60s leeway)
+    if (scheduledDateTime.getTime() <= Date.now() - 60000) {
+      setErrorMsg('Meetings can only be scheduled for a future date and time.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       setErrorMsg('');
@@ -412,14 +477,19 @@ export default function ScheduleMeetings() {
       // Parse start and end time to calculate duration
       const [startH, startM] = modalStartTime.split(':').map(Number);
       const [endH, endM] = (modalEndTime || '12:00').split(':').map(Number);
-      const scheduledDateTime = new Date(`${modalDate}T${modalStartTime}:00`);
       
       let duration = (endH * 60 + endM) - (startH * 60 + startM);
-      if (duration <= 0) duration = 45;
+      if (duration <= 0) duration = 30;
 
       const token = localStorage.getItem('token');
-      const res = await fetch(`${API_URL}/community/scheduled-calls`, {
-        method: 'POST',
+      const isEditing = Boolean(editingCallId);
+      const endpoint = isEditing 
+        ? `${API_URL}/community/scheduled-calls/${editingCallId}`
+        : `${API_URL}/community/scheduled-calls`;
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const res = await fetch(endpoint, {
+        method,
         headers: {
           'Content-Type': 'application/json',
           'x-auth-token': token
@@ -436,10 +506,11 @@ export default function ScheduleMeetings() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.msg || 'Failed to create meeting');
+        throw new Error(data.msg || `Failed to ${isEditing ? 'update' : 'create'} meeting`);
       }
 
       setIsModalOpen(false);
+      setEditingCallId(null);
       fetchScheduledCalls();
     } catch (err) {
       setErrorMsg(err.message || 'Something went wrong.');
@@ -1182,23 +1253,55 @@ export default function ScheduleMeetings() {
                           )}
                         </div>
 
-                        {/* Host Cancel option */}
+                        {/* Host Actions: Edit & Cancel */}
                         {isHost && !isCancelled && (
-                          <button
-                            onClick={() => handleCancelCall(call._id)}
-                            title="Cancel meeting"
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: 'rgba(255, 255, 255, 0.3)',
-                              cursor: 'pointer',
-                              padding: '2px'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.color = '#ff4d4d'}
-                            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.3)'}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                              onClick={() => openEditModal(call)}
+                              title="Edit meeting"
+                              style={{
+                                background: 'rgba(0, 122, 255, 0.12)',
+                                border: '1px solid rgba(0, 122, 255, 0.3)',
+                                borderRadius: '8px',
+                                color: '#00f2fe',
+                                cursor: 'pointer',
+                                padding: '4px 8px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.25)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.12)'}
+                            >
+                              <Edit2 size={11} /> Edit
+                            </button>
+
+                            <button
+                              onClick={() => handleCancelCall(call._id)}
+                              title="Cancel meeting"
+                              style={{
+                                background: 'rgba(255, 77, 77, 0.08)',
+                                border: '1px solid rgba(255, 77, 77, 0.25)',
+                                borderRadius: '8px',
+                                color: '#ff6b6b',
+                                cursor: 'pointer',
+                                padding: '4px 8px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                transition: 'all 0.15s ease'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.2)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.08)'}
+                            >
+                              <Trash2 size={11} /> Cancel
+                            </button>
+                          </div>
                         )}
                       </div>
 
@@ -1312,57 +1415,97 @@ export default function ScheduleMeetings() {
                         </div>
                       </div>
 
-                      {/* Attendees Avatars Row (Matching reference) */}
+                      {/* Host & Invited Attendees Section */}
                       <div style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
+                        flexDirection: 'column',
+                        gap: '8px',
+                        paddingTop: '10px',
+                        borderTop: '1px solid rgba(255, 255, 255, 0.06)'
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          {attendees.slice(0, 3).map((u, aIdx) => {
-                            const name = u.communityProfile?.fullName || u.username || 'Member';
-                            const initial = name.charAt(0).toUpperCase();
-                            const avatar = u.communityProfile?.avatarUrl;
-
-                            return (
-                              <div
-                                key={u._id || aIdx}
-                                title={name}
-                                style={{
-                                  width: '24px',
-                                  height: '24px',
-                                  borderRadius: '50%',
-                                  background: 'linear-gradient(135deg, #007aff, #a855f7)',
-                                  border: '2px solid #131b2e',
-                                  marginLeft: aIdx > 0 ? '-6px' : '0',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: '0.68rem',
-                                  fontWeight: 800,
-                                  color: '#fff',
-                                  overflow: 'hidden'
-                                }}
-                              >
-                                {avatar ? (
-                                  <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                ) : initial}
-                              </div>
-                            );
-                          })}
+                        {/* Host Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{
+                            width: '22px',
+                            height: '22px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #007aff, #00f2fe)',
+                            border: '1.5px solid rgba(0, 242, 254, 0.6)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.65rem',
+                            fontWeight: 800,
+                            color: '#fff',
+                            overflow: 'hidden',
+                            flexShrink: 0
+                          }}>
+                            {call.host?.communityProfile?.avatarUrl ? (
+                              <img src={call.host.communityProfile.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (call.host?.communityProfile?.fullName || call.host?.username || 'H').charAt(0).toUpperCase()}
+                          </div>
+                          <span style={{ fontSize: '0.76rem', color: 'rgba(255, 255, 255, 0.85)' }}>
+                            Host: <strong style={{ color: '#00f2fe' }}>
+                              {isHost ? `${call.host?.communityProfile?.fullName || call.host?.username || 'Host'} (You)` : (call.host?.communityProfile?.fullName || call.host?.username || 'Host')}
+                            </strong>
+                          </span>
                         </div>
 
-                        {/* Name label text */}
-                        <span style={{
-                          fontSize: '0.75rem',
-                          color: 'rgba(255, 255, 255, 0.6)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis'
-                        }}>
-                          {attendees[0]?.communityProfile?.fullName || attendees[0]?.username || 'Host'}
-                          {attendees.length > 1 ? ` and ${attendees.length - 1} more` : ''}
-                        </span>
+                        {/* Invited Members Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {call.participants && call.participants.length > 0 ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center' }}>
+                                {call.participants.slice(0, 3).map((u, aIdx) => {
+                                  const name = u.communityProfile?.fullName || u.username || 'Member';
+                                  const initial = name.charAt(0).toUpperCase();
+                                  const avatar = u.communityProfile?.avatarUrl;
+
+                                  return (
+                                    <div
+                                      key={u._id || aIdx}
+                                      title={name}
+                                      style={{
+                                        width: '20px',
+                                        height: '20px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #a855f7, #ec4899)',
+                                        border: '1.5px solid #131b2e',
+                                        marginLeft: aIdx > 0 ? '-6px' : '0',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '0.62rem',
+                                        fontWeight: 800,
+                                        color: '#fff',
+                                        overflow: 'hidden'
+                                      }}
+                                    >
+                                      {avatar ? (
+                                        <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : initial}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <span style={{
+                                fontSize: '0.73rem',
+                                color: 'rgba(255, 255, 255, 0.55)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}>
+                                Invited: {call.participants[0]?.communityProfile?.fullName || call.participants[0]?.username}
+                                {call.participants.length > 1 ? ` +${call.participants.length - 1} more` : ''}
+                              </span>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: '0.73rem', color: 'rgba(255, 255, 255, 0.4)', fontStyle: 'italic' }}>
+                              No members invited yet (open via Meet Link)
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                     </div>
@@ -1405,34 +1548,51 @@ export default function ScheduleMeetings() {
           }}>
 
             {/* Modal Header: Title & Close */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <input
-                type="text"
-                value={modalTitle}
-                onChange={e => setModalTitle(e.target.value)}
-                placeholder="Meeting Title"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#fff',
-                  fontSize: '1.25rem',
+            <div>
+              {editingCallId && (
+                <div style={{
+                  fontSize: '0.72rem',
                   fontWeight: 800,
-                  outline: 'none',
-                  width: '90%'
-                }}
-              />
-              <button
-                onClick={() => setIsModalOpen(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'rgba(255, 255, 255, 0.5)',
-                  cursor: 'pointer',
-                  padding: '4px'
-                }}
-              >
-                <X size={18} />
-              </button>
+                  color: '#00f2fe',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.8px',
+                  marginBottom: '4px'
+                }}>
+                  Editing Meeting (Host)
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={modalTitle}
+                  onChange={e => setModalTitle(e.target.value)}
+                  placeholder="Meeting Title"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    outline: 'none',
+                    width: '90%'
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingCallId(null);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                    cursor: 'pointer',
+                    padding: '4px'
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {errorMsg && (
@@ -1448,17 +1608,27 @@ export default function ScheduleMeetings() {
               </div>
             )}
 
-            <form onSubmit={handleCreateMeeting} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <form onSubmit={handleSaveMeeting} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
-              {/* Row 1: Date */}
+              {/* Row 1: Date (Future Date Only) */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
                   Date
                 </span>
                 <input
                   type="date"
+                  min={new Date().toISOString().split('T')[0]}
                   value={modalDate}
-                  onChange={e => setModalDate(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    if (val < todayStr) {
+                      setErrorMsg('Meeting date cannot be in the past.');
+                      return;
+                    }
+                    setErrorMsg('');
+                    setModalDate(val);
+                  }}
                   required
                   style={{
                     background: 'rgba(255, 255, 255, 0.05)',
@@ -1827,7 +1997,7 @@ export default function ScheduleMeetings() {
                   onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
                   onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                 >
-                  {isSubmitting ? 'Saving...' : 'Save'}
+                  {isSubmitting ? 'Saving...' : editingCallId ? 'Save Changes' : 'Save'}
                 </button>
               </div>
 
