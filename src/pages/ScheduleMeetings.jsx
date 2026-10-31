@@ -41,8 +41,8 @@ export default function ScheduleMeetings() {
   const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
-  // Filter Tab on Scheduled Panel: 'selected_day' | 'upcoming' | 'past'
-  const [scheduledFilter, setScheduledFilter] = useState('selected_day');
+  // Filter Tab on Scheduled Panel: 'upcoming' | 'past' | 'all'
+  const [scheduledFilter, setScheduledFilter] = useState('upcoming');
 
   // Real-time Room Participant Counts: { [roomId]: number }
   const [roomParticipantsMap, setRoomParticipantsMap] = useState({});
@@ -250,17 +250,47 @@ export default function ScheduleMeetings() {
     }
   };
 
+  // Handle Calendar Day Selection with intelligent tab switching
+  const handleSelectCalendarDay = (cellDate) => {
+    setSelectedDate(cellDate);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const cellStart = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
+
+    // Find all calls on this cellDate
+    const dayCalls = calls.filter(c => isSameDay(new Date(c.scheduledAt), cellDate));
+
+    const hasCancelled = dayCalls.some(c => c.status === 'cancelled');
+    const hasPast = dayCalls.some(c => {
+      const end = new Date(new Date(c.scheduledAt).getTime() + (c.durationMinutes || 30) * 60000);
+      return end < now || c.status === 'completed';
+    });
+    const hasUpcoming = dayCalls.some(c => {
+      const end = new Date(new Date(c.scheduledAt).getTime() + (c.durationMinutes || 30) * 60000);
+      return end >= now && c.status !== 'cancelled';
+    });
+
+    // If day has cancelled meeting OR has multiple types of meetings (both upcoming & past):
+    if (hasCancelled || (hasPast && hasUpcoming)) {
+      setScheduledFilter('all');
+    } else if (cellStart < todayStart || (hasPast && !hasUpcoming)) {
+      setScheduledFilter('past');
+    } else {
+      setScheduledFilter('upcoming');
+    }
+  };
+
   // Next / Prev Day on Scheduled Agenda
   const handlePrevDay = () => {
-    const next = new Date(selectedDate);
-    next.setDate(next.getDate() - 1);
-    setSelectedDate(next);
+    const prev = new Date(selectedDate);
+    prev.setDate(prev.getDate() - 1);
+    handleSelectCalendarDay(prev);
   };
 
   const handleNextDay = () => {
     const next = new Date(selectedDate);
     next.setDate(next.getDate() + 1);
-    setSelectedDate(next);
+    handleSelectCalendarDay(next);
   };
 
   // Check if two dates are same day
@@ -504,7 +534,14 @@ export default function ScheduleMeetings() {
         })
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch (parseErr) {
+        data = { msg: text || 'Server response error' };
+      }
+
       if (!res.ok) {
         throw new Error(data.msg || `Failed to ${isEditing ? 'update' : 'create'} meeting`);
       }
@@ -587,11 +624,51 @@ export default function ScheduleMeetings() {
     setActiveCallRoom(null);
   };
 
+  // Helper to determine status badge for card (Upcoming, Past, Cancelled, Live Now)
+  const getCallStatusBadge = (call) => {
+    const now = new Date();
+    const callDate = new Date(call.scheduledAt);
+    const callEndDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
+    const liveCount = roomParticipantsMap[call.roomId] || call.liveParticipantCount || 0;
+
+    if (call.status === 'cancelled') {
+      return {
+        label: 'Cancelled',
+        color: '#ff6b6b',
+        bg: 'rgba(255, 107, 107, 0.14)',
+        border: '1px solid rgba(255, 107, 107, 0.35)'
+      };
+    }
+    if (liveCount > 0) {
+      return {
+        label: '● Live Now',
+        color: '#00f2fe',
+        bg: 'rgba(0, 242, 254, 0.15)',
+        border: '1px solid #00f2fe'
+      };
+    }
+    if (callEndDate < now || call.status === 'completed') {
+      return {
+        label: 'Past',
+        color: 'rgba(255, 255, 255, 0.55)',
+        bg: 'rgba(255, 255, 255, 0.08)',
+        border: '1px solid rgba(255, 255, 255, 0.15)'
+      };
+    }
+    return {
+      label: 'Upcoming',
+      color: '#10b981',
+      bg: 'rgba(16, 185, 129, 0.15)',
+      border: '1px solid rgba(16, 185, 129, 0.3)'
+    };
+  };
+
   // Filter scheduled calls for the Right Panel
   const filteredScheduledCalls = useMemo(() => {
     const now = new Date();
     return calls.filter(call => {
       const callDate = new Date(call.scheduledAt);
+      const callEndDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -601,12 +678,15 @@ export default function ScheduleMeetings() {
         if (!matchTitle && !matchDesc && !matchHost) return false;
       }
 
-      if (scheduledFilter === 'selected_day') {
-        return isSameDay(callDate, selectedDate);
-      } else if (scheduledFilter === 'upcoming') {
-        return callDate >= new Date(now.getTime() - 60 * 60 * 1000) && call.status !== 'cancelled';
+      // Filter by selected day
+      if (!isSameDay(callDate, selectedDate)) return false;
+
+      if (scheduledFilter === 'upcoming') {
+        return call.status !== 'cancelled' && callEndDate >= now;
       } else if (scheduledFilter === 'past') {
-        return callDate < new Date(now.getTime() - 60 * 60 * 1000) || call.status === 'cancelled';
+        return call.status !== 'cancelled' && (callEndDate < now || call.status === 'completed');
+      } else if (scheduledFilter === 'all') {
+        return true;
       }
       return true;
     }).sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
@@ -885,7 +965,7 @@ export default function ScheduleMeetings() {
               return (
                 <div
                   key={idx}
-                  onClick={() => setSelectedDate(cellDate)}
+                  onClick={() => handleSelectCalendarDay(cellDate)}
                   onDoubleClick={() => openScheduleModal(cellDate)}
                   style={{
                     minHeight: '105px',
@@ -1083,7 +1163,7 @@ export default function ScheduleMeetings() {
             </div>
           </div>
 
-          {/* Quick Filter Tabs: Selected Day / Upcoming / Past */}
+          {/* Quick Filter Tabs: Upcoming / Past / All */}
           <div style={{
             display: 'flex',
             background: 'rgba(255, 255, 255, 0.04)',
@@ -1092,9 +1172,9 @@ export default function ScheduleMeetings() {
             marginBottom: '18px'
           }}>
             {[
-              { id: 'selected_day', label: 'Selected Day' },
               { id: 'upcoming', label: 'Upcoming' },
-              { id: 'past', label: 'Past' }
+              { id: 'past', label: 'Past' },
+              { id: 'all', label: 'All' }
             ].map(tab => (
               <button
                 key={tab.id}
@@ -1143,9 +1223,11 @@ export default function ScheduleMeetings() {
                   No activities scheduled
                 </div>
                 <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '14px' }}>
-                  {scheduledFilter === 'selected_day' 
-                    ? `Nothing planned on ${selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
-                    : 'No meetings found in this view'}
+                  {scheduledFilter === 'upcoming'
+                    ? `No upcoming meetings on ${selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                    : scheduledFilter === 'past'
+                    ? `No past meetings on ${selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                    : `No meetings on ${selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`}
                 </div>
                 <button
                   onClick={() => openScheduleModal(selectedDate)}
@@ -1169,6 +1251,7 @@ export default function ScheduleMeetings() {
                 const isHost = (call.host?._id || call.host) === currentUser._id;
                 const isCancelled = call.status === 'cancelled';
                 const accentColor = getTypeColor(idx);
+                const statusBadge = getCallStatusBadge(call);
 
                 // Real-time live participant count
                 const liveCount = roomParticipantsMap[call.roomId] || call.liveParticipantCount || 0;
@@ -1232,11 +1315,30 @@ export default function ScheduleMeetings() {
                         marginBottom: '6px'
                       }}>
                         <div>
+                          <div style={{ marginBottom: '6px' }}>
+                            <span style={{
+                              fontSize: '0.66rem',
+                              fontWeight: 800,
+                              color: statusBadge.color,
+                              background: statusBadge.bg,
+                              border: statusBadge.border,
+                              borderRadius: '6px',
+                              padding: '2px 8px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              letterSpacing: '0.5px',
+                              textTransform: 'uppercase'
+                            }}>
+                              {statusBadge.label}
+                            </span>
+                          </div>
                           <h3 style={{
                             margin: 0,
                             fontSize: '1.05rem',
                             fontWeight: 800,
-                            color: '#fff',
+                            color: isCancelled ? 'rgba(255, 255, 255, 0.45)' : '#fff',
+                            textDecoration: isCancelled ? 'line-through' : 'none',
                             lineHeight: 1.3
                           }}>
                             {call.title}
@@ -1376,24 +1478,29 @@ export default function ScheduleMeetings() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {/* Meet Link Join Button */}
                           <button
-                            onClick={() => handleJoinCall(call)}
+                            disabled={isCancelled}
+                            onClick={() => !isCancelled && handleJoinCall(call)}
                             style={{
-                              background: isLiveNow
+                              background: isCancelled
+                                ? 'rgba(255, 255, 255, 0.05)'
+                                : isLiveNow
                                 ? 'linear-gradient(135deg, #007aff, #00f2fe)'
                                 : 'rgba(0, 122, 255, 0.15)',
-                              border: isLiveNow ? 'none' : '1px solid rgba(0, 122, 255, 0.35)',
+                              border: isCancelled
+                                ? '1px solid rgba(255, 255, 255, 0.1)'
+                                : isLiveNow ? 'none' : '1px solid rgba(0, 122, 255, 0.35)',
                               borderRadius: '20px',
                               padding: '5px 12px',
-                              color: isLiveNow ? '#fff' : '#00f2fe',
+                              color: isCancelled ? 'rgba(255, 255, 255, 0.35)' : isLiveNow ? '#fff' : '#00f2fe',
                               fontSize: '0.75rem',
                               fontWeight: 800,
-                              cursor: 'pointer',
+                              cursor: isCancelled ? 'not-allowed' : 'pointer',
                               display: 'flex',
                               alignItems: 'center',
                               gap: '5px'
                             }}
                           >
-                            <Video size={12} /> Meet Link
+                            <Video size={12} /> {isCancelled ? 'Cancelled' : 'Meet Link'}
                           </button>
 
                           {/* Copy Link Button */}
