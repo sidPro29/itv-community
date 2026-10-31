@@ -351,7 +351,15 @@ export default function ScheduleMeetings() {
     );
   };
 
-  // Time stepper helpers (< 11:30 >)
+  // Time stepper helpers (< 11:30 AM >)
+  const format24To12 = (time24) => {
+    if (!time24) return '';
+    const [h, m] = time24.split(':').map(Number);
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+  };
+
   const adjustTime = (timeStr, deltaMinutes) => {
     const [h, m] = (timeStr || '12:00').split(':').map(Number);
     const date = new Date();
@@ -1095,10 +1103,10 @@ export default function ScheduleMeetings() {
                 const liveCount = roomParticipantsMap[call.roomId] || call.liveParticipantCount || 0;
                 const isLiveNow = liveCount > 0;
 
-                // Time strings: e.g. 09:00 - 10:15
-                const startTimeStr = callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                // Time strings: e.g. 09:00 AM - 10:15 AM
+                const startTimeStr = callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
                 const endTimeDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
-                const endTimeStr = endTimeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const endTimeStr = endTimeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
                 // Duration text: e.g. 45 min, 1 hour
                 const durationMins = call.durationMinutes || 30;
@@ -1523,12 +1531,12 @@ export default function ScheduleMeetings() {
                     </button>
                     <span style={{
                       color: '#fff',
-                      fontSize: '0.92rem',
+                      fontSize: '0.88rem',
                       fontWeight: 700,
-                      letterSpacing: '0.5px',
+                      letterSpacing: '0.3px',
                       userSelect: 'none'
                     }}>
-                      {modalStartTime}
+                      {format24To12(modalStartTime)}
                     </span>
                     <button
                       type="button"
@@ -1559,12 +1567,12 @@ export default function ScheduleMeetings() {
                     </button>
                     <span style={{
                       color: '#fff',
-                      fontSize: '0.92rem',
+                      fontSize: '0.88rem',
                       fontWeight: 700,
-                      letterSpacing: '0.5px',
+                      letterSpacing: '0.3px',
                       userSelect: 'none'
                     }}>
-                      {modalEndTime}
+                      {format24To12(modalEndTime)}
                     </span>
                     <button
                       type="button"
