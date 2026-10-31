@@ -57,6 +57,8 @@ export default function ScheduleMeetings() {
   const [modalEndTime, setModalEndTime] = useState('13:00');
   const [modalNote, setModalNote] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState([]);
+  const [busyUserIds, setBusyUserIds] = useState([]);
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [showMemberPicker, setShowMemberPicker] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [allMembers, setAllMembers] = useState([]);
@@ -302,7 +304,48 @@ export default function ScheduleMeetings() {
     setIsModalOpen(true);
   };
 
+  // Check availability of community members for the selected date/time window
+  useEffect(() => {
+    if (!isModalOpen || !modalDate || !modalStartTime) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingAvailability(true);
+        const start = new Date(`${modalDate}T${modalStartTime}:00`).toISOString();
+        const end = new Date(`${modalDate}T${modalEndTime || '23:59'}:00`).toISOString();
+
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_URL}/community/check-availability`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-auth-token': token
+          },
+          body: JSON.stringify({ start, end })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const busyList = Array.isArray(data.busyUserIds) ? data.busyUserIds : [];
+          setBusyUserIds(busyList);
+
+          // Auto-remove any selected participant who is now busy/collided
+          setSelectedParticipants(prev => prev.filter(id => !busyList.includes(id)));
+        }
+      } catch (err) {
+        console.warn('Availability check failed:', err);
+      } finally {
+        setCheckingAvailability(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [isModalOpen, modalDate, modalStartTime, modalEndTime, API_URL]);
+
   const handleToggleMember = (memberId) => {
+    // If user is busy/collided at this time, cannot invite them
+    if (busyUserIds.includes(memberId)) return;
+
     setSelectedParticipants(prev => 
       prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
     );
@@ -316,6 +359,30 @@ export default function ScheduleMeetings() {
     const newH = String(date.getHours()).padStart(2, '0');
     const newM = String(date.getMinutes()).padStart(2, '0');
     return `${newH}:${newM}`;
+  };
+
+  const handleStepStartTime = (delta) => {
+    setModalStartTime(prev => {
+      const updated = adjustTime(prev, delta);
+      const [uh, um] = updated.split(':').map(Number);
+      const [eh, em] = modalEndTime.split(':').map(Number);
+      if (eh * 60 + em <= uh * 60 + um) {
+        setModalEndTime(adjustTime(updated, 30));
+      }
+      return updated;
+    });
+  };
+
+  const handleStepEndTime = (delta) => {
+    setModalEndTime(prev => {
+      const updated = adjustTime(prev, delta);
+      const [sh, sm] = modalStartTime.split(':').map(Number);
+      const [uh, um] = updated.split(':').map(Number);
+      if (uh * 60 + um <= sh * 60 + sm) {
+        return prev; // Do not allow end time to be before start time
+      }
+      return updated;
+    });
   };
 
   // Create Scheduled Call
@@ -1429,64 +1496,13 @@ export default function ScheduleMeetings() {
                 </div>
               </div>
 
-              {/* Row 3: Call Type (Video or Audio) */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
-                  Media
-                </span>
-                <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-                  <button
-                    type="button"
-                    onClick={() => setModalCallType('video')}
-                    style={{
-                      flex: 1,
-                      padding: '6px',
-                      borderRadius: '8px',
-                      background: modalCallType === 'video' ? 'rgba(0, 122, 255, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      border: modalCallType === 'video' ? '1px solid #007aff' : '1px solid rgba(255,255,255,0.08)',
-                      color: modalCallType === 'video' ? '#00f2fe' : 'rgba(255,255,255,0.6)',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px'
-                    }}
-                  >
-                    <Video size={13} /> Video
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setModalCallType('audio')}
-                    style={{
-                      flex: 1,
-                      padding: '6px',
-                      borderRadius: '8px',
-                      background: modalCallType === 'audio' ? 'rgba(52, 199, 89, 0.25)' : 'rgba(255, 255, 255, 0.04)',
-                      border: modalCallType === 'audio' ? '1px solid #34c759' : '1px solid rgba(255,255,255,0.08)',
-                      color: modalCallType === 'audio' ? '#34c759' : 'rgba(255,255,255,0.6)',
-                      fontSize: '0.78rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '5px'
-                    }}
-                  >
-                    <Mic size={13} /> Audio
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 4: Hour Range with Steppers (< 11:30 > < 13:00 > in reference) */}
+              {/* Row 3: Hour Range with Clean Steppers (< 11:30 > < 13:00 > in reference) */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
                   Hour
                 </span>
 
-                <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                <div style={{ display: 'flex', gap: '10px', flex: 1 }}>
                   {/* Start Time Stepper */}
                   <div style={{
                     flex: 1,
@@ -1496,37 +1512,30 @@ export default function ScheduleMeetings() {
                     background: 'rgba(255, 255, 255, 0.05)',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '10px',
-                    padding: '4px 6px'
+                    padding: '8px 12px'
                   }}>
                     <button
                       type="button"
-                      onClick={() => setModalStartTime(prev => adjustTime(prev, -15))}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                      onClick={() => handleStepStartTime(-15)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                     >
-                      <ChevronLeft size={13} />
+                      <ChevronLeft size={15} />
                     </button>
-                    <input
-                      type="time"
-                      value={modalStartTime}
-                      onChange={e => setModalStartTime(e.target.value)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#fff',
-                        fontSize: '0.82rem',
-                        fontWeight: 700,
-                        outline: 'none',
-                        textAlign: 'center',
-                        width: '58px',
-                        colorScheme: 'dark'
-                      }}
-                    />
+                    <span style={{
+                      color: '#fff',
+                      fontSize: '0.92rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      userSelect: 'none'
+                    }}>
+                      {modalStartTime}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setModalStartTime(prev => adjustTime(prev, 15))}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                      onClick={() => handleStepStartTime(15)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                     >
-                      <ChevronRight size={13} />
+                      <ChevronRight size={15} />
                     </button>
                   </div>
 
@@ -1539,37 +1548,30 @@ export default function ScheduleMeetings() {
                     background: 'rgba(255, 255, 255, 0.05)',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '10px',
-                    padding: '4px 6px'
+                    padding: '8px 12px'
                   }}>
                     <button
                       type="button"
-                      onClick={() => setModalEndTime(prev => adjustTime(prev, -15))}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                      onClick={() => handleStepEndTime(-15)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                     >
-                      <ChevronLeft size={13} />
+                      <ChevronLeft size={15} />
                     </button>
-                    <input
-                      type="time"
-                      value={modalEndTime}
-                      onChange={e => setModalEndTime(e.target.value)}
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#fff',
-                        fontSize: '0.82rem',
-                        fontWeight: 700,
-                        outline: 'none',
-                        textAlign: 'center',
-                        width: '58px',
-                        colorScheme: 'dark'
-                      }}
-                    />
+                    <span style={{
+                      color: '#fff',
+                      fontSize: '0.92rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      userSelect: 'none'
+                    }}>
+                      {modalEndTime}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setModalEndTime(prev => adjustTime(prev, 15))}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                      onClick={() => handleStepEndTime(15)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                     >
-                      <ChevronRight size={13} />
+                      <ChevronRight size={15} />
                     </button>
                   </div>
                 </div>
@@ -1669,30 +1671,37 @@ export default function ScheduleMeetings() {
               {/* Collapsible Member Search & Selection Box */}
               {showMemberPicker && (
                 <div style={{
-                  background: 'rgba(0, 0, 0, 0.4)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: 'rgba(0, 0, 0, 0.45)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
                   borderRadius: '12px',
                   padding: '10px',
-                  maxHeight: '140px',
+                  maxHeight: '170px',
                   overflowY: 'auto'
                 }}>
-                  <input
-                    type="text"
-                    placeholder="Search members..."
-                    value={memberSearch}
-                    onChange={e => setMemberSearch(e.target.value)}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '6px',
-                      padding: '5px 8px',
-                      color: '#fff',
-                      fontSize: '0.78rem',
-                      outline: 'none',
-                      marginBottom: '8px'
-                    }}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Search members..."
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '6px',
+                        padding: '6px 10px',
+                        color: '#fff',
+                        fontSize: '0.8rem',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+
+                  {checkingAvailability && (
+                    <div style={{ fontSize: '0.72rem', color: '#00f2fe', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={11} className="animate-spin" /> Refreshing schedule availability...
+                    </div>
+                  )}
 
                   {allMembers
                     .filter(m => {
@@ -1702,24 +1711,87 @@ export default function ScheduleMeetings() {
                     })
                     .map(m => {
                       const isSel = selectedParticipants.includes(m._id);
+                      const isBusy = busyUserIds.includes(m._id);
                       const name = m.communityProfile?.fullName || m.username;
+                      const initial = name.charAt(0).toUpperCase();
+
                       return (
                         <div
                           key={m._id}
-                          onClick={() => handleToggleMember(m._id)}
+                          onClick={() => !isBusy && handleToggleMember(m._id)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
                             padding: '6px 8px',
-                            borderRadius: '6px',
-                            background: isSel ? 'rgba(0, 122, 255, 0.2)' : 'transparent',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem'
+                            borderRadius: '8px',
+                            background: isBusy
+                              ? 'rgba(255, 77, 77, 0.06)'
+                              : isSel
+                              ? 'rgba(0, 122, 255, 0.2)'
+                              : 'transparent',
+                            cursor: isBusy ? 'not-allowed' : 'pointer',
+                            fontSize: '0.8rem',
+                            opacity: isBusy ? 0.6 : 1,
+                            marginBottom: '3px',
+                            transition: 'all 0.15s ease'
                           }}
+                          title={isBusy ? `${name} has a conflicting meeting scheduled at this time` : name}
                         >
-                          <span>{name}</span>
-                          {isSel && <Check size={13} color="#00f2fe" />}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              background: isBusy ? '#475569' : 'linear-gradient(135deg, #007aff, #00f2fe)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              color: '#fff',
+                              overflow: 'hidden'
+                            }}>
+                              {m.communityProfile?.avatarUrl ? (
+                                <img src={m.communityProfile.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              ) : initial}
+                            </div>
+                            <span style={{ fontWeight: 600, color: isBusy ? 'rgba(255, 255, 255, 0.55)' : '#fff' }}>
+                              {name}
+                            </span>
+                            {isBusy && (
+                              <span style={{
+                                fontSize: '0.66rem',
+                                color: '#ff4d4d',
+                                background: 'rgba(255, 77, 77, 0.15)',
+                                border: '1px solid rgba(255, 77, 77, 0.3)',
+                                padding: '1px 6px',
+                                borderRadius: '6px',
+                                fontWeight: 700
+                              }}>
+                                Busy (Time Conflict)
+                              </span>
+                            )}
+                          </div>
+
+                          {isBusy ? (
+                            <span style={{ fontSize: '0.68rem', color: '#ff4d4d', fontWeight: 600 }}>
+                              Unavailable
+                            </span>
+                          ) : (
+                            <div style={{
+                              width: '16px',
+                              height: '16px',
+                              borderRadius: '4px',
+                              border: isSel ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.3)',
+                              background: isSel ? '#00f2fe' : 'transparent',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              {isSel && <Check size={11} color="#000" />}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
