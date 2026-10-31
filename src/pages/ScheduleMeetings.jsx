@@ -61,6 +61,8 @@ export default function ScheduleMeetings() {
   const [busyUserIds, setBusyUserIds] = useState([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [showMemberPicker, setShowMemberPicker] = useState(false);
+  const [showStartTimeDropdown, setShowStartTimeDropdown] = useState(false);
+  const [showEndTimeDropdown, setShowEndTimeDropdown] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
   const [allMembers, setAllMembers] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -352,6 +354,8 @@ export default function ScheduleMeetings() {
     setModalNote('');
     setErrorMsg('');
     setShowMemberPicker(false);
+    setShowStartTimeDropdown(false);
+    setShowEndTimeDropdown(false);
     setIsModalOpen(true);
   };
 
@@ -384,6 +388,8 @@ export default function ScheduleMeetings() {
 
     setErrorMsg('');
     setShowMemberPicker(false);
+    setShowStartTimeDropdown(false);
+    setShowEndTimeDropdown(false);
     setIsModalOpen(true);
   };
 
@@ -450,6 +456,39 @@ export default function ScheduleMeetings() {
     const newH = String(date.getHours()).padStart(2, '0');
     const newM = String(date.getMinutes()).padStart(2, '0');
     return `${newH}:${newM}`;
+  };
+
+  // Pre-generate 15-minute time slots for dropdown
+  const TIME_SLOTS = useMemo(() => {
+    const slots = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        const hStr = String(h).padStart(2, '0');
+        const mStr = String(m).padStart(2, '0');
+        const time24 = `${hStr}:${mStr}`;
+        const period = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        const label = `${String(h12).padStart(2, '0')}:${mStr} ${period}`;
+        slots.push({ value: time24, label, minutes: h * 60 + m });
+      }
+    }
+    return slots;
+  }, []);
+
+  const handleSelectStartTime = (timeVal) => {
+    setModalStartTime(timeVal);
+    setShowStartTimeDropdown(false);
+
+    const [sh, sm] = timeVal.split(':').map(Number);
+    const [eh, em] = (modalEndTime || '12:00').split(':').map(Number);
+    if (eh * 60 + em <= sh * 60 + sm) {
+      setModalEndTime(adjustTime(timeVal, 30));
+    }
+  };
+
+  const handleSelectEndTime = (timeVal) => {
+    setModalEndTime(timeVal);
+    setShowEndTimeDropdown(false);
   };
 
   const handleStepStartTime = (delta) => {
@@ -1856,76 +1895,229 @@ export default function ScheduleMeetings() {
                 </span>
 
                 <div style={{ display: 'flex', gap: '10px', flex: 1 }}>
-                  {/* Start Time Stepper */}
-                  <div style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '10px',
-                    padding: '8px 12px'
-                  }}>
-                    <button
-                      type="button"
-                      onClick={() => handleStepStartTime(-15)}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                    >
-                      <ChevronLeft size={15} />
-                    </button>
-                    <span style={{
-                      color: '#fff',
-                      fontSize: '0.88rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.3px',
-                      userSelect: 'none'
+                  {/* Start Time Stepper & Dropdown */}
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: showStartTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '10px',
+                      padding: '8px 10px',
+                      transition: 'border 0.2s ease'
                     }}>
-                      {format24To12(modalStartTime)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleStepStartTime(15)}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                    >
-                      <ChevronRight size={15} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepStartTime(-15);
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+
+                      <div
+                        onClick={() => {
+                          setShowEndTimeDropdown(false);
+                          setShowStartTimeDropdown(prev => !prev);
+                        }}
+                        title="Click to select start time"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          color: '#fff',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.3px',
+                          userSelect: 'none',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <span>{format24To12(modalStartTime)}</span>
+                        <ChevronDown size={12} color="rgba(255, 255, 255, 0.6)" />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepStartTime(15);
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
+
+                    {/* Start Time Dropdown Menu */}
+                    {showStartTimeDropdown && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        right: 0,
+                        maxHeight: '190px',
+                        overflowY: 'auto',
+                        background: '#0d1527',
+                        border: '1px solid rgba(0, 242, 254, 0.4)',
+                        borderRadius: '10px',
+                        boxShadow: '0 14px 40px rgba(0, 0, 0, 0.9)',
+                        zIndex: 10000,
+                        padding: '4px'
+                      }}>
+                        {TIME_SLOTS.map(slot => {
+                          const isSelected = slot.value === modalStartTime;
+                          return (
+                            <div
+                              key={slot.value}
+                              onClick={() => handleSelectStartTime(slot.value)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                fontSize: '0.8rem',
+                                fontWeight: isSelected ? 800 : 500,
+                                color: isSelected ? '#00f2fe' : '#fff',
+                                background: isSelected ? 'rgba(0, 122, 255, 0.25)' : 'transparent',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                transition: 'background 0.12s ease'
+                              }}
+                              onMouseEnter={e => {
+                                if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                              }}
+                              onMouseLeave={e => {
+                                if (!isSelected) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <span>{slot.label}</span>
+                              {isSelected && <Check size={12} color="#00f2fe" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
-                  {/* End Time Stepper */}
-                  <div style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '10px',
-                    padding: '8px 12px'
-                  }}>
-                    <button
-                      type="button"
-                      onClick={() => handleStepEndTime(-15)}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                    >
-                      <ChevronLeft size={15} />
-                    </button>
-                    <span style={{
-                      color: '#fff',
-                      fontSize: '0.88rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.3px',
-                      userSelect: 'none'
+                  {/* End Time Stepper & Dropdown */}
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: showEndTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '10px',
+                      padding: '8px 10px',
+                      transition: 'border 0.2s ease'
                     }}>
-                      {format24To12(modalEndTime)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleStepEndTime(15)}
-                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                    >
-                      <ChevronRight size={15} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepEndTime(-15);
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                      >
+                        <ChevronLeft size={15} />
+                      </button>
+
+                      <div
+                        onClick={() => {
+                          setShowStartTimeDropdown(false);
+                          setShowEndTimeDropdown(prev => !prev);
+                        }}
+                        title="Click to select end time"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          color: '#fff',
+                          fontSize: '0.88rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.3px',
+                          userSelect: 'none',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          borderRadius: '6px'
+                        }}
+                      >
+                        <span>{format24To12(modalEndTime)}</span>
+                        <ChevronDown size={12} color="rgba(255, 255, 255, 0.6)" />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleStepEndTime(15);
+                        }}
+                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                      >
+                        <ChevronRight size={15} />
+                      </button>
+                    </div>
+
+                    {/* End Time Dropdown Menu */}
+                    {showEndTimeDropdown && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: 0,
+                        right: 0,
+                        maxHeight: '190px',
+                        overflowY: 'auto',
+                        background: '#0d1527',
+                        border: '1px solid rgba(0, 242, 254, 0.4)',
+                        borderRadius: '10px',
+                        boxShadow: '0 14px 40px rgba(0, 0, 0, 0.9)',
+                        zIndex: 10000,
+                        padding: '4px'
+                      }}>
+                        {TIME_SLOTS
+                          .filter(slot => {
+                            const [sh, sm] = modalStartTime.split(':').map(Number);
+                            return slot.minutes > sh * 60 + sm;
+                          })
+                          .map(slot => {
+                            const isSelected = slot.value === modalEndTime;
+                            return (
+                              <div
+                                key={slot.value}
+                                onClick={() => handleSelectEndTime(slot.value)}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: isSelected ? 800 : 500,
+                                  color: isSelected ? '#00f2fe' : '#fff',
+                                  background: isSelected ? 'rgba(0, 122, 255, 0.25)' : 'transparent',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  transition: 'background 0.12s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                }}
+                                onMouseLeave={e => {
+                                  if (!isSelected) e.currentTarget.style.background = 'transparent';
+                                }}
+                              >
+                                <span>{slot.label}</span>
+                                {isSelected && <Check size={12} color="#00f2fe" />}
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
