@@ -556,20 +556,49 @@ export default function ScheduleMeetings() {
     }
   };
 
-  // Cancel / Delete Call
+  // Cancel Call (marks status as 'cancelled')
   const handleCancelCall = async (callId) => {
-    if (!window.confirm('Are you sure you want to cancel this meeting?')) return;
+    if (!window.confirm('Are you sure you want to cancel this meeting? Once cancelled, you will be able to delete it permanently.')) return;
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/scheduled-calls/${callId}/cancel`, {
+        method: 'PUT',
+        headers: { 'x-auth-token': token }
+      });
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch { data = { msg: text }; }
+      if (!res.ok) {
+        alert(data.msg || 'Failed to cancel call');
+        return;
+      }
+      setCalls(prev => prev.map(c => c._id === callId ? { ...c, status: 'cancelled' } : c));
+    } catch (err) {
+      console.error('Error cancelling call:', err);
+      alert(err.message || 'Error cancelling call');
+    }
+  };
+
+  // Permanently Delete Call from Database
+  const handleDeleteCall = async (callId) => {
+    if (!window.confirm('Are you sure you want to permanently delete this meeting from the database? This cannot be undone.')) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/community/scheduled-calls/${callId}`, {
         method: 'DELETE',
         headers: { 'x-auth-token': token }
       });
-      if (res.ok) {
-        setCalls(prev => prev.map(c => c._id === callId ? { ...c, status: 'cancelled' } : c));
+      const text = await res.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch { data = { msg: text }; }
+      if (!res.ok) {
+        alert(data.msg || 'Failed to delete meeting');
+        return;
       }
+      setCalls(prev => prev.filter(c => c._id !== callId));
     } catch (err) {
-      console.error('Error cancelling call:', err);
+      console.error('Error deleting call from database:', err);
+      alert(err.message || 'Error deleting meeting');
     }
   };
 
@@ -1261,6 +1290,8 @@ export default function ScheduleMeetings() {
                 const startTimeStr = callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
                 const endTimeDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
                 const endTimeStr = endTimeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+                const isPast = endTimeDate < new Date() || call.status === 'completed';
+                const isUpcoming = !isCancelled && !isPast;
 
                 // Duration text: e.g. 45 min, 1 hour
                 const durationMins = call.durationMinutes || 30;
@@ -1355,54 +1386,91 @@ export default function ScheduleMeetings() {
                           )}
                         </div>
 
-                        {/* Host Actions: Edit & Cancel */}
-                        {isHost && !isCancelled && (
+                        {/* Host Actions: Edit & Cancel for Upcoming; Delete for Past / Cancelled */}
+                        {isHost && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <button
-                              onClick={() => openEditModal(call)}
-                              title="Edit meeting"
-                              style={{
-                                background: 'rgba(0, 122, 255, 0.12)',
-                                border: '1px solid rgba(0, 122, 255, 0.3)',
-                                borderRadius: '8px',
-                                color: '#00f2fe',
-                                cursor: 'pointer',
-                                padding: '4px 8px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.25)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.12)'}
-                            >
-                              <Edit2 size={11} /> Edit
-                            </button>
+                            {/* If upcoming and NOT cancelled: Host can Edit or Cancel */}
+                            {isUpcoming && !isCancelled && (
+                              <>
+                                <button
+                                  onClick={() => openEditModal(call)}
+                                  title="Edit meeting"
+                                  style={{
+                                    background: 'rgba(0, 122, 255, 0.12)',
+                                    border: '1px solid rgba(0, 122, 255, 0.3)',
+                                    borderRadius: '8px',
+                                    color: '#00f2fe',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.25)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(0, 122, 255, 0.12)'}
+                                >
+                                  <Edit2 size={11} /> Edit
+                                </button>
 
-                            <button
-                              onClick={() => handleCancelCall(call._id)}
-                              title="Cancel meeting"
-                              style={{
-                                background: 'rgba(255, 77, 77, 0.08)',
-                                border: '1px solid rgba(255, 77, 77, 0.25)',
-                                borderRadius: '8px',
-                                color: '#ff6b6b',
-                                cursor: 'pointer',
-                                padding: '4px 8px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '0.72rem',
-                                fontWeight: 700,
-                                transition: 'all 0.15s ease'
-                              }}
-                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.2)'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 77, 77, 0.08)'}
-                            >
-                              <Trash2 size={11} /> Cancel
-                            </button>
+                                <button
+                                  onClick={() => handleCancelCall(call._id)}
+                                  title="Cancel meeting (must cancel before deleting)"
+                                  style={{
+                                    background: 'rgba(255, 171, 0, 0.1)',
+                                    border: '1px solid rgba(255, 171, 0, 0.3)',
+                                    borderRadius: '8px',
+                                    color: '#ffb703',
+                                    cursor: 'pointer',
+                                    padding: '4px 8px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 700,
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 171, 0, 0.22)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 171, 0, 0.1)'}
+                                >
+                                  <X size={11} /> Cancel
+                                </button>
+                              </>
+                            )}
+
+                            {/* If Past or Cancelled: Host can permanently Delete from database */}
+                            {(isPast || isCancelled) && (
+                              <button
+                                onClick={() => handleDeleteCall(call._id)}
+                                title="Permanently remove from database"
+                                style={{
+                                  background: 'rgba(255, 77, 77, 0.1)',
+                                  border: '1px solid rgba(255, 77, 77, 0.3)',
+                                  borderRadius: '8px',
+                                  color: '#ff4d4d',
+                                  cursor: 'pointer',
+                                  padding: '4px 8px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  transition: 'all 0.15s ease'
+                                }}
+                                onMouseEnter={e => {
+                                  e.currentTarget.style.background = 'rgba(255, 77, 77, 0.25)';
+                                  e.currentTarget.style.color = '#fff';
+                                }}
+                                onMouseLeave={e => {
+                                  e.currentTarget.style.background = 'rgba(255, 77, 77, 0.1)';
+                                  e.currentTarget.style.color = '#ff4d4d';
+                                }}
+                              >
+                                <Trash2 size={11} /> Delete
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
