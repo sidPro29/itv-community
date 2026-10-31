@@ -1,34 +1,65 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Calendar, Clock, Video, Mic, Plus, Users, Search, 
+  Calendar as CalendarIcon, Clock, Video, Mic, Plus, Users, Search, 
   Check, X, PhoneCall, Copy, Trash2, Shield, Sparkles, 
-  ExternalLink, AlertCircle, Share2
+  ExternalLink, AlertCircle, Share2, ChevronLeft, ChevronRight, 
+  ChevronDown, Bell, Link as LinkIcon, Radio
 } from 'lucide-react';
 import DeviceSetupModal from '../components/DeviceSetupModal';
 import CallModal from '../components/CallModal';
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June', 
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const MEETING_TYPES = [
+  { id: 'important', label: 'Important', color: '#f97316' }, // Orange
+  { id: 'sync', label: 'Team Sync', color: '#007aff' },      // Bright Blue
+  { id: 'interview', label: 'Interview', color: '#84cc16' }, // Neon Lime
+  { id: 'standup', label: 'Stand-up', color: '#eab308' },    // Yellow
+  { id: 'discussion', label: 'Discussion', color: '#a855f7' },// Purple
+  { id: 'casual', label: 'Quick Chat', color: '#00f2fe' }    // Cyan
+];
+
 export default function ScheduleMeetings() {
   const { currentUser, API_URL } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('upcoming'); // upcoming, my_hosted, past
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Calendar Date Navigation
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(() => new Date().getMonth());
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+
+  // Filter Tab on Scheduled Panel: 'selected_day' | 'upcoming' | 'past'
+  const [scheduledFilter, setScheduledFilter] = useState('selected_day');
+
+  // Real-time Room Participant Counts: { [roomId]: number }
+  const [roomParticipantsMap, setRoomParticipantsMap] = useState({});
 
   // Schedule Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [callType, setCallType] = useState('video');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState(30);
-  const [allMembers, setAllMembers] = useState([]);
+  const [modalTitle, setModalTitle] = useState('Brainstorm Session');
+  const [modalDate, setModalDate] = useState('');
+  const [modalType, setModalType] = useState('important');
+  const [modalCallType, setModalCallType] = useState('video'); // 'video' | 'audio'
+  const [modalStartTime, setModalStartTime] = useState('11:30');
+  const [modalEndTime, setModalEndTime] = useState('13:00');
+  const [modalNote, setModalNote] = useState('');
   const [selectedParticipants, setSelectedParticipants] = useState([]);
+  const [showMemberPicker, setShowMemberPicker] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
+  const [allMembers, setAllMembers] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedId, setCopiedId] = useState(null);
@@ -40,7 +71,7 @@ export default function ScheduleMeetings() {
 
   const SOCKET_URL = API_URL.replace('/api', '');
 
-  // Initialize Socket.io for in-page WebRTC meetings
+  // Initialize Socket.io for live updates & call rooms
   useEffect(() => {
     if (!currentUser?._id) return;
 
@@ -51,6 +82,23 @@ export default function ScheduleMeetings() {
     });
 
     socketRef.current.emit('user_connected', currentUser._id);
+
+    // Initial query of live participant counts
+    socketRef.current.emit('get_live_room_counts', (counts) => {
+      if (counts && typeof counts === 'object') {
+        setRoomParticipantsMap(counts);
+      }
+    });
+
+    // Real-time listener for participant changes in any room
+    socketRef.current.on('call_room_participant_update', ({ roomId, participantCount }) => {
+      if (roomId) {
+        setRoomParticipantsMap(prev => ({
+          ...prev,
+          [roomId]: participantCount || 0
+        }));
+      }
+    });
 
     return () => {
       socketRef.current?.disconnect();
@@ -63,6 +111,27 @@ export default function ScheduleMeetings() {
     fetchMembers();
   }, []);
 
+  // Handle direct join link: e.g. /schedule?joinRoom=sched_...
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const joinRoomId = params.get('joinRoom');
+    if (joinRoomId && calls.length > 0) {
+      const targetCall = calls.find(c => c.roomId === joinRoomId);
+      if (targetCall) {
+        handleJoinCall(targetCall);
+      } else {
+        // Unknown or custom link room - join as persistent meeting room
+        setSetupModalConfig({
+          roomId: joinRoomId,
+          callType: 'video',
+          isInitiator: false,
+          isRejoin: true,
+          title: 'Google Meet Style Room'
+        });
+      }
+    }
+  }, [location.search, calls]);
+
   // Handle URL query to prefill scheduling with a specific member
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -71,7 +140,7 @@ export default function ScheduleMeetings() {
       const target = allMembers.find(m => m._id === scheduleWith);
       if (target && !selectedParticipants.includes(target._id)) {
         setSelectedParticipants([target._id]);
-        setIsModalOpen(true);
+        openScheduleModal(new Date());
       }
     }
   }, [location.search, allMembers]);
@@ -86,6 +155,14 @@ export default function ScheduleMeetings() {
       if (res.ok) {
         const data = await res.json();
         setCalls(Array.isArray(data) ? data : []);
+        // Populate initial live counts
+        const initialMap = {};
+        data.forEach(c => {
+          if (c.roomId && c.liveParticipantCount !== undefined) {
+            initialMap[c.roomId] = c.liveParticipantCount;
+          }
+        });
+        setRoomParticipantsMap(prev => ({ ...prev, ...initialMap }));
       }
     } catch (err) {
       console.error('Error fetching scheduled calls:', err);
@@ -109,42 +186,162 @@ export default function ScheduleMeetings() {
     }
   };
 
-  const handleOpenScheduleModal = () => {
-    // Default scheduled time to 1 hour from now formatted for datetime-local
-    const now = new Date();
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-    const localIso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  // Calendar Calculations
+  const calendarDays = useMemo(() => {
+    const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay(); // 0 = Sun
+    const daysInCurrentMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
 
-    setScheduledAt(localIso);
-    setTitle('');
-    setDescription('');
-    setCallType('video');
-    setDurationMinutes(30);
+    const days = [];
+
+    // Prev month overflow days
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      days.push({
+        dayNumber: daysInPrevMonth - i,
+        month: currentMonth - 1,
+        year: currentMonth === 0 ? currentYear - 1 : currentYear,
+        isCurrentMonth: false
+      });
+    }
+
+    // Current month days
+    for (let i = 1; i <= daysInCurrentMonth; i++) {
+      days.push({
+        dayNumber: i,
+        month: currentMonth,
+        year: currentYear,
+        isCurrentMonth: true
+      });
+    }
+
+    // Next month overflow days to make complete 35 or 42 grid
+    const remaining = (7 - (days.length % 7)) % 7;
+    for (let i = 1; i <= remaining; i++) {
+      days.push({
+        dayNumber: i,
+        month: currentMonth + 1,
+        year: currentMonth === 11 ? currentYear + 1 : currentYear,
+        isCurrentMonth: false
+      });
+    }
+
+    return days;
+  }, [currentYear, currentMonth]);
+
+  // Previous & Next Month
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(prev => prev - 1);
+    } else {
+      setCurrentMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(prev => prev + 1);
+    } else {
+      setCurrentMonth(prev => prev + 1);
+    }
+  };
+
+  // Next / Prev Day on Scheduled Agenda
+  const handlePrevDay = () => {
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() - 1);
+    setSelectedDate(next);
+  };
+
+  const handleNextDay = () => {
+    const next = new Date(selectedDate);
+    next.setDate(next.getDate() + 1);
+    setSelectedDate(next);
+  };
+
+  // Check if two dates are same day
+  const isSameDay = (d1, d2) => {
+    if (!d1 || !d2) return false;
+    const a = new Date(d1);
+    const b = new Date(d2);
+    return a.getFullYear() === b.getFullYear() && 
+           a.getMonth() === b.getMonth() && 
+           a.getDate() === b.getDate();
+  };
+
+  // Get events on a specific date
+  const getEventsForDay = (year, month, day) => {
+    return calls.filter(call => {
+      const d = new Date(call.scheduledAt);
+      return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day;
+    });
+  };
+
+  // Open Schedule Modal for a given date
+  const openScheduleModal = (dateToUse = selectedDate) => {
+    const targetDate = dateToUse instanceof Date ? dateToUse : new Date(dateToUse);
+    const y = targetDate.getFullYear();
+    const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const d = String(targetDate.getDate()).padStart(2, '0');
+    setModalDate(`${y}-${m}-${d}`);
+
+    // Set reasonable times
+    const now = new Date();
+    const currentH = String(now.getHours() + 1).padStart(2, '0');
+    setModalStartTime(`${currentH}:00`);
+    const endH = String(now.getHours() + 2).padStart(2, '0');
+    setModalEndTime(`${endH}:00`);
+
+    setModalTitle('Brainstorm Session');
+    setModalType('important');
+    setModalCallType('video');
+    setModalNote('');
     setErrorMsg('');
+    setShowMemberPicker(false);
     setIsModalOpen(true);
   };
 
-  const toggleParticipant = (memberId) => {
+  const handleToggleMember = (memberId) => {
     setSelectedParticipants(prev => 
       prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId]
     );
   };
 
-  const handleCreateSchedule = async (e) => {
+  // Time stepper helpers (< 11:30 >)
+  const adjustTime = (timeStr, deltaMinutes) => {
+    const [h, m] = (timeStr || '12:00').split(':').map(Number);
+    const date = new Date();
+    date.setHours(h, m + deltaMinutes, 0, 0);
+    const newH = String(date.getHours()).padStart(2, '0');
+    const newM = String(date.getMinutes()).padStart(2, '0');
+    return `${newH}:${newM}`;
+  };
+
+  // Create Scheduled Call
+  const handleCreateMeeting = async (e) => {
     e.preventDefault();
-    if (!title.trim()) {
+    if (!modalTitle.trim()) {
       setErrorMsg('Please enter a meeting title.');
       return;
     }
-    if (!scheduledAt) {
-      setErrorMsg('Please select a date and time.');
+    if (!modalDate || !modalStartTime) {
+      setErrorMsg('Please select date and start time.');
       return;
     }
 
     try {
       setIsSubmitting(true);
       setErrorMsg('');
+
+      // Parse start and end time to calculate duration
+      const [startH, startM] = modalStartTime.split(':').map(Number);
+      const [endH, endM] = (modalEndTime || '12:00').split(':').map(Number);
+      const scheduledDateTime = new Date(`${modalDate}T${modalStartTime}:00`);
+      
+      let duration = (endH * 60 + endM) - (startH * 60 + startM);
+      if (duration <= 0) duration = 45;
+
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/community/scheduled-calls`, {
         method: 'POST',
@@ -153,18 +350,18 @@ export default function ScheduleMeetings() {
           'x-auth-token': token
         },
         body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          callType,
-          scheduledAt: new Date(scheduledAt).toISOString(),
-          durationMinutes: Number(durationMinutes),
+          title: modalTitle.trim(),
+          description: modalNote.trim(),
+          callType: modalCallType,
+          scheduledAt: scheduledDateTime.toISOString(),
+          durationMinutes: duration,
           participantIds: selectedParticipants
         })
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.msg || 'Failed to schedule call');
+        throw new Error(data.msg || 'Failed to create meeting');
       }
 
       setIsModalOpen(false);
@@ -176,8 +373,9 @@ export default function ScheduleMeetings() {
     }
   };
 
+  // Cancel / Delete Call
   const handleCancelCall = async (callId) => {
-    if (!window.confirm('Are you sure you want to cancel this scheduled meeting?')) return;
+    if (!window.confirm('Are you sure you want to cancel this meeting?')) return;
     try {
       const token = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/community/scheduled-calls/${callId}`, {
@@ -192,6 +390,7 @@ export default function ScheduleMeetings() {
     }
   };
 
+  // Copy Meeting Link (Google Meet shareable link)
   const copyMeetingLink = (call) => {
     const url = `${window.location.origin}/schedule?joinRoom=${call.roomId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -200,7 +399,7 @@ export default function ScheduleMeetings() {
     });
   };
 
-  // Launch Call via Device Setup
+  // Launch Live WebRTC Call Room
   const handleJoinCall = (call) => {
     const participantIds = (call.participants || []).map(p => (p._id || p).toString());
     const isHost = (call.host?._id || call.host) === currentUser._id;
@@ -242,462 +441,236 @@ export default function ScheduleMeetings() {
     setActiveCallRoom(null);
   };
 
-  // Filter Calls
-  const now = new Date();
-  const filteredCalls = calls.filter(call => {
-    const callDate = new Date(call.scheduledAt);
-    const isPast = callDate < new Date(now.getTime() - 60 * 60 * 1000) || call.status === 'completed' || call.status === 'cancelled';
-    const isMyHosted = (call.host?._id || call.host) === currentUser._id;
+  // Filter scheduled calls for the Right Panel
+  const filteredScheduledCalls = useMemo(() => {
+    const now = new Date();
+    return calls.filter(call => {
+      const callDate = new Date(call.scheduledAt);
 
-    if (activeTab === 'upcoming') {
-      if (isPast) return false;
-    } else if (activeTab === 'my_hosted') {
-      if (!isMyHosted) return false;
-    } else if (activeTab === 'past') {
-      if (!isPast) return false;
-    }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchTitle = (call.title || '').toLowerCase().includes(q);
+        const matchDesc = (call.description || '').toLowerCase().includes(q);
+        const matchHost = (call.host?.communityProfile?.fullName || call.host?.username || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchHost) return false;
+      }
 
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchTitle = call.title.toLowerCase().includes(q);
-      const matchDesc = (call.description || '').toLowerCase().includes(q);
-      const matchHost = (call.host?.communityProfile?.fullName || call.host?.username || '').toLowerCase().includes(q);
-      return matchTitle || matchDesc || matchHost;
-    }
+      if (scheduledFilter === 'selected_day') {
+        return isSameDay(callDate, selectedDate);
+      } else if (scheduledFilter === 'upcoming') {
+        return callDate >= new Date(now.getTime() - 60 * 60 * 1000) && call.status !== 'cancelled';
+      } else if (scheduledFilter === 'past') {
+        return callDate < new Date(now.getTime() - 60 * 60 * 1000) || call.status === 'cancelled';
+      }
+      return true;
+    }).sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+  }, [calls, selectedDate, scheduledFilter, searchQuery]);
 
-    return true;
-  });
+  // Greeting based on time of day
+  const greetingText = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Morning';
+    if (h < 17) return 'Afternoon';
+    return 'Evening';
+  }, []);
 
-  const filteredMembers = allMembers.filter(m => {
-    if (!memberSearch.trim()) return true;
-    const name = (m.communityProfile?.fullName || m.username || '').toLowerCase();
-    const cat = (m.communityProfile?.category || '').toLowerCase();
-    return name.includes(memberSearch.toLowerCase()) || cat.includes(memberSearch.toLowerCase());
-  });
+  const userName = currentUser?.communityProfile?.fullName || currentUser?.username || 'Astronaut';
+  const firstName = userName.split(' ')[0];
+
+  // Helper color tag for meeting cards
+  const getTypeColor = (index, type) => {
+    const colors = ['#f97316', '#84cc16', '#007aff', '#00f2fe', '#a855f7', '#eab308'];
+    return colors[index % colors.length];
+  };
 
   return (
-    <div style={{ maxWidth: '1200px', margin: '36px auto', padding: '0 24px', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      
-      {/* Hero Header */}
+    <div style={{
+      maxWidth: '1440px',
+      margin: '0 auto',
+      padding: '24px 28px',
+      fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+      color: '#fff',
+      minHeight: 'calc(100vh - 80px)'
+    }}>
+
+      {/* TOP HEADER: Greeting, Search & Action Button */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: '20px',
-        marginBottom: '32px'
+        marginBottom: '26px'
       }}>
+        {/* Left: Greeting */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <span style={{
-              background: 'rgba(0, 242, 254, 0.12)',
-              color: '#00f2fe',
-              border: '1px solid rgba(0, 242, 254, 0.25)',
-              padding: '4px 12px',
-              borderRadius: '20px',
-              fontSize: '0.75rem',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}>
-              <Calendar size={13} /> ITV SPACE MEETINGS
-            </span>
-          </div>
-          <h1 style={{ margin: 0, fontSize: '2.2rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.5px' }}>
-            Scheduled Calls & Meetings
-          </h1>
-          <p style={{ margin: '8px 0 0 0', color: 'rgba(255,255,255,0.65)', fontSize: '0.95rem' }}>
-            Schedule ahead, invite community members, and join crystal-clear HD audio/video calls.
-          </p>
-        </div>
-
-        <button
-          onClick={handleOpenScheduleModal}
-          style={{
-            background: 'linear-gradient(135deg, #00f2fe 0%, #007aff 100%)',
-            border: 'none',
-            borderRadius: '14px',
-            padding: '14px 24px',
-            color: '#fff',
+          <h1 style={{
+            margin: 0,
+            fontSize: '1.95rem',
             fontWeight: 800,
-            fontSize: '0.95rem',
-            cursor: 'pointer',
+            color: '#fff',
+            letterSpacing: '-0.02em',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 8px 25px rgba(0, 242, 254, 0.35)',
-            transition: 'transform 0.15s ease, box-shadow 0.15s ease'
-          }}
-          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-          onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-        >
-          <Plus size={18} /> Schedule a Call
-        </button>
-      </div>
-
-      {/* Tabs & Search Controls */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '16px',
-        background: 'rgba(13, 19, 38, 0.7)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '16px',
-        padding: '10px 16px',
-        marginBottom: '28px'
-      }}>
-        {/* Filter Tabs */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          {[
-            { id: 'upcoming', label: 'Upcoming' },
-            { id: 'my_hosted', label: 'Hosted by Me' },
-            { id: 'past', label: 'Past & Cancelled' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                background: activeTab === tab.id ? 'rgba(0, 242, 254, 0.15)' : 'transparent',
-                color: activeTab === tab.id ? '#00f2fe' : 'rgba(255,255,255,0.65)',
-                border: activeTab === tab.id ? '1px solid rgba(0, 242, 254, 0.3)' : '1px solid transparent',
-                borderRadius: '10px',
-                padding: '8px 16px',
-                fontSize: '0.86rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Search Bar */}
-        <div style={{
-          position: 'relative',
-          minWidth: '240px',
-          flex: '1',
-          maxWidth: '360px'
-        }}>
-          <Search size={15} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
-          <input
-            type="text"
-            placeholder="Search meetings by title or host..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '10px',
-              padding: '8px 12px 8px 36px',
-              color: '#fff',
-              fontSize: '0.85rem',
-              outline: 'none'
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Meetings Grid / List */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0', color: 'rgba(255,255,255,0.5)' }}>
-          <Clock size={32} style={{ animation: 'spin 2s linear infinite', marginBottom: '12px' }} />
-          <p>Loading scheduled meetings...</p>
-        </div>
-      ) : filteredCalls.length === 0 ? (
-        <div style={{
-          textAlign: 'center',
-          padding: '60px 20px',
-          background: 'rgba(13, 19, 38, 0.4)',
-          borderRadius: '20px',
-          border: '1px dashed rgba(255,255,255,0.12)'
-        }}>
-          <Calendar size={48} style={{ color: 'rgba(255,255,255,0.25)', marginBottom: '12px' }} />
-          <h3 style={{ margin: '0 0 6px 0', color: '#fff', fontSize: '1.2rem', fontWeight: 700 }}>
-            {activeTab === 'upcoming' ? 'No Upcoming Meetings' : activeTab === 'my_hosted' ? 'No Meetings Hosted by You' : 'No Past Meetings'}
-          </h3>
-          <p style={{ margin: '0 0 20px 0', color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-            Schedule a meeting in advance to sync with space community members.
+            gap: '8px'
+          }}>
+            {greetingText}, {firstName}!
+          </h1>
+          <p style={{
+            margin: '5px 0 0 0',
+            color: 'rgba(255, 255, 255, 0.55)',
+            fontSize: '0.92rem'
+          }}>
+            Here's what's on your agenda today.
           </p>
+        </div>
+
+        {/* Right: Search Bar & Schedule Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{
+            position: 'relative',
+            width: '280px'
+          }}>
+            <Search size={16} style={{
+              position: 'absolute',
+              left: '14px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'rgba(255, 255, 255, 0.4)'
+            }} />
+            <input
+              type="text"
+              placeholder="Search for some activities"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '14px',
+                padding: '10px 14px 10px 40px',
+                color: '#fff',
+                fontSize: '0.86rem',
+                outline: 'none',
+                transition: 'border 0.2s ease'
+              }}
+              onFocus={e => e.target.style.borderColor = 'rgba(0, 242, 254, 0.4)'}
+              onBlur={e => e.target.style.borderColor = 'rgba(255, 255, 255, 0.1)'}
+            />
+          </div>
+
           <button
-            onClick={handleOpenScheduleModal}
+            onClick={() => openScheduleModal(selectedDate)}
             style={{
-              background: 'rgba(0, 242, 254, 0.15)',
-              color: '#00f2fe',
-              border: '1px solid rgba(0, 242, 254, 0.3)',
-              borderRadius: '12px',
-              padding: '10px 20px',
-              fontWeight: 700,
+              background: 'linear-gradient(135deg, #007aff 0%, #00f2fe 100%)',
+              border: 'none',
+              borderRadius: '14px',
+              padding: '11px 22px',
+              color: '#fff',
+              fontWeight: 800,
               fontSize: '0.88rem',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              boxShadow: '0 4px 20px rgba(0, 122, 255, 0.35)',
+              transition: 'transform 0.15s ease'
             }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
           >
-            + Schedule Your First Call
+            <Plus size={16} /> Schedule
           </button>
         </div>
-      ) : (
+      </div>
+
+      {/* MAIN CONTAINER: Calendar (Left) & Scheduled Agenda (Right) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(600px, 1fr) 420px',
+        gap: '24px',
+        alignItems: 'start'
+      }}>
+
+        {/* LEFT COLUMN: INTERACTIVE MONTH CALENDAR */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-          gap: '22px'
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '24px',
+          padding: '24px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)'
         }}>
-          {filteredCalls.map(call => {
-            const isHost = (call.host?._id || call.host) === currentUser._id;
-            const callDate = new Date(call.scheduledAt);
-            const isLiveSoon = Math.abs(callDate - new Date()) < 15 * 60 * 1000;
-            const isCancelled = call.status === 'cancelled';
 
-            return (
-              <div
-                key={call._id}
-                style={{
-                  background: 'rgba(13, 19, 38, 0.85)',
-                  border: isLiveSoon && !isCancelled ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '20px',
-                  padding: '22px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  boxShadow: isLiveSoon && !isCancelled ? '0 8px 30px rgba(0, 242, 254, 0.2)' : '0 8px 24px rgba(0,0,0,0.4)',
-                  position: 'relative',
-                  overflow: 'hidden'
-                }}
-              >
-                {/* Status Badges */}
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{
-                        background: call.callType === 'audio' ? 'rgba(52, 199, 89, 0.15)' : 'rgba(0, 122, 255, 0.15)',
-                        color: call.callType === 'audio' ? '#34c759' : '#007aff',
-                        border: `1px solid ${call.callType === 'audio' ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0, 122, 255, 0.3)'}`,
-                        borderRadius: '20px',
-                        padding: '3px 10px',
-                        fontSize: '0.72rem',
-                        fontWeight: 800,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px'
-                      }}>
-                        {call.callType === 'audio' ? <Mic size={12} /> : <Video size={12} />}
-                        {call.callType === 'audio' ? 'Audio Call' : 'Video Call'}
-                      </span>
-
-                      {isLiveSoon && !isCancelled && (
-                        <span style={{
-                          background: 'rgba(255, 0, 128, 0.2)',
-                          color: '#ff0080',
-                          border: '1px solid rgba(255, 0, 128, 0.4)',
-                          borderRadius: '20px',
-                          padding: '3px 10px',
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          animation: 'pulse 1.5s infinite'
-                        }}>
-                          LIVE NOW
-                        </span>
-                      )}
-
-                      {isCancelled && (
-                        <span style={{
-                          background: 'rgba(255, 77, 77, 0.15)',
-                          color: '#ff4d4d',
-                          border: '1px solid rgba(255, 77, 77, 0.3)',
-                          borderRadius: '20px',
-                          padding: '3px 10px',
-                          fontSize: '0.72rem',
-                          fontWeight: 800
-                        }}>
-                          Cancelled
-                        </span>
-                      )}
-                    </div>
-
-                    {isHost && !isCancelled && (
-                      <button
-                        onClick={() => handleCancelCall(call._id)}
-                        title="Cancel Meeting"
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'rgba(255,255,255,0.4)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.color = '#ff4d4d'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.4)'}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Title & Description */}
-                  <h3 style={{ margin: '0 0 6px 0', fontSize: '1.25rem', fontWeight: 800, color: '#fff', lineHeight: 1.3 }}>
-                    {call.title}
-                  </h3>
-                  {call.description && (
-                    <p style={{ margin: '0 0 16px 0', color: 'rgba(255,255,255,0.65)', fontSize: '0.85rem', lineHeight: 1.4 }}>
-                      {call.description}
-                    </p>
-                  )}
-
-                  {/* Date & Duration Info */}
-                  <div style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    borderRadius: '12px',
-                    padding: '10px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '16px',
-                    fontSize: '0.84rem',
-                    color: 'rgba(255,255,255,0.85)'
-                  }}>
-                    <Calendar size={15} color="#00f2fe" />
-                    <span>
-                      {callDate.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })} • {callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span style={{ color: 'rgba(255,255,255,0.3)' }}>|</span>
-                    <Clock size={14} color="#00f2fe" />
-                    <span>{call.durationMinutes || 30} mins</span>
-                  </div>
-
-                  {/* Host & Participants Row */}
-                  <div style={{ marginBottom: '20px' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'rgba(255,255,255,0.5)', marginBottom: '8px' }}>
-                      HOST & PARTICIPANTS
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      {/* Host Avatar */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '20px', padding: '3px 10px 3px 4px' }}>
-                        <div style={{
-                          width: '24px',
-                          height: '24px',
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #00f2fe, #7928ca)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '0.75rem',
-                          fontWeight: 800,
-                          color: '#fff'
-                        }}>
-                          {(call.host?.communityProfile?.fullName || call.host?.username || 'H').charAt(0).toUpperCase()}
-                        </div>
-                        <span style={{ fontSize: '0.8rem', color: '#fff' }}>
-                          {isHost ? 'You (Host)' : (call.host?.communityProfile?.fullName || call.host?.username)}
-                        </span>
-                      </div>
-
-                      {/* Participant Count */}
-                      {(call.participants || []).length > 0 && (
-                        <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)' }}>
-                          + {call.participants.length} member{call.participants.length > 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Actions Bottom Bar */}
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  {!isCancelled && (
-                    <button
-                      onClick={() => handleJoinCall(call)}
-                      style={{
-                        flex: 1,
-                        background: 'linear-gradient(135deg, #00f2fe 0%, #007aff 100%)',
-                        border: 'none',
-                        borderRadius: '12px',
-                        padding: '11px 16px',
-                        color: '#fff',
-                        fontWeight: 800,
-                        fontSize: '0.88rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)'
-                      }}
-                    >
-                      <PhoneCall size={15} /> Join Call Now
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => copyMeetingLink(call)}
-                    title="Copy Meeting Link"
-                    style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      borderRadius: '12px',
-                      padding: '11px',
-                      color: copiedId === call._id ? '#00f2fe' : '#fff',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    {copiedId === call._id ? <Check size={16} /> : <Share2 size={16} />}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* --- SCHEDULE A CALL MODAL --- */}
-      {isModalOpen && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(3, 7, 18, 0.8)',
-          backdropFilter: 'blur(14px)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 99999,
-          padding: '20px'
-        }}>
+          {/* Month & Year Selectors with Navigation */}
           <div style={{
-            width: '100%',
-            maxWidth: '520px',
-            background: '#0d1326',
-            borderRadius: '24px',
-            border: '1px solid rgba(0, 242, 254, 0.3)',
-            boxShadow: '0 25px 60px rgba(0,0,0,0.9)',
-            padding: '28px',
             display: 'flex',
-            flexDirection: 'column',
-            gap: '18px',
-            color: '#fff',
-            maxHeight: '90vh',
-            overflowY: 'auto'
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '20px'
           }}>
-            {/* Modal Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={20} color="#00f2fe" />
-                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Schedule a Call</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              {/* Month Dropdown */}
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={currentMonth}
+                  onChange={e => setCurrentMonth(Number(e.target.value))}
+                  style={{
+                    appearance: 'none',
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    paddingRight: '22px',
+                    outline: 'none'
+                  }}
+                >
+                  {MONTH_NAMES.map((name, i) => (
+                    <option key={name} value={i} style={{ background: '#0f172a', color: '#fff' }}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'rgba(255,255,255,0.6)' }} />
               </div>
+
+              {/* Year Dropdown */}
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={currentYear}
+                  onChange={e => setCurrentYear(Number(e.target.value))}
+                  style={{
+                    appearance: 'none',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.6)',
+                    fontSize: '1.25rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    paddingRight: '20px',
+                    outline: 'none'
+                  }}
+                >
+                  {[currentYear - 1, currentYear, currentYear + 1, currentYear + 2].map(y => (
+                    <option key={y} value={y} style={{ background: '#0f172a', color: '#fff' }}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'rgba(255,255,255,0.4)' }} />
+              </div>
+            </div>
+
+            {/* Prev / Next Month Arrow Buttons */}
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={handlePrevMonth}
                 style={{
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  border: 'none',
-                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
                   width: '32px',
                   height: '32px',
                   color: '#fff',
@@ -707,7 +680,683 @@ export default function ScheduleMeetings() {
                   justifyContent: 'center'
                 }}
               >
-                <X size={16} />
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={handleNextMonth}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  width: '32px',
+                  height: '32px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Day of Week Header Row */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '8px',
+            marginBottom: '10px'
+          }}>
+            {DAY_NAMES.map(day => (
+              <div
+                key={day}
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  padding: '4px 6px'
+                }}
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar Month Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '8px'
+          }}>
+            {calendarDays.map((cell, idx) => {
+              const cellDate = new Date(cell.year, cell.month, cell.dayNumber);
+              const isToday = isSameDay(cellDate, new Date());
+              const isSelected = isSameDay(cellDate, selectedDate);
+              const dayEvents = getEventsForDay(cell.year, cell.month, cell.dayNumber);
+
+              return (
+                <div
+                  key={idx}
+                  onClick={() => setSelectedDate(cellDate)}
+                  onDoubleClick={() => openScheduleModal(cellDate)}
+                  style={{
+                    minHeight: '105px',
+                    borderRadius: '16px',
+                    padding: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.18s ease',
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    // Background & borders matching reference:
+                    background: isToday
+                      ? 'radial-gradient(circle at center, rgba(0, 122, 255, 0.35) 0%, rgba(15, 23, 42, 0.6) 80%)'
+                      : isSelected
+                      ? 'rgba(0, 122, 255, 0.12)'
+                      : 'rgba(255, 255, 255, 0.02)',
+                    border: isSelected
+                      ? '1px dashed #007aff'
+                      : isToday
+                      ? '1px solid rgba(0, 122, 255, 0.5)'
+                      : '1px solid rgba(255, 255, 255, 0.04)',
+                    opacity: cell.isCurrentMonth ? 1 : 0.3
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected && !isToday) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                  }}
+                >
+                  {/* Date Number */}
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <span style={{
+                      fontSize: '0.88rem',
+                      fontWeight: isToday || isSelected ? 800 : 600,
+                      color: isToday ? '#00f2fe' : isSelected ? '#fff' : 'rgba(255, 255, 255, 0.7)'
+                    }}>
+                      {cell.dayNumber}
+                    </span>
+
+                    {/* Quick + button on selected */}
+                    {isSelected && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openScheduleModal(cellDate);
+                        }}
+                        title="Add meeting on this day"
+                        style={{
+                          background: 'rgba(0, 122, 255, 0.25)',
+                          border: 'none',
+                          borderRadius: '50%',
+                          width: '18px',
+                          height: '18px',
+                          color: '#00f2fe',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0
+                        }}
+                      >
+                        <Plus size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Meeting Event Chips inside Cell */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '6px' }}>
+                    {dayEvents.slice(0, 3).map((event, eventIdx) => {
+                      const color = getTypeColor(eventIdx);
+                      return (
+                        <div
+                          key={event._id || eventIdx}
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 600,
+                            color: 'rgba(255, 255, 255, 0.85)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <span style={{
+                            width: '3px',
+                            height: '9px',
+                            borderRadius: '2px',
+                            background: color,
+                            flexShrink: 0
+                          }} />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {event.title}
+                          </span>
+                        </div>
+                      );
+                    })}
+
+                    {dayEvents.length > 3 && (
+                      <span style={{ fontSize: '0.62rem', color: '#00f2fe', fontWeight: 700 }}>
+                        +{dayEvents.length - 3} more
+                      </span>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN: "SCHEDULED" SIDEBAR / AGENDA */}
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '24px',
+          padding: '24px',
+          boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+
+          {/* Header: Title, Selected Date, and Date Nav */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px'
+          }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>
+                Scheduled
+              </h2>
+              <span style={{ fontSize: '0.8rem', color: 'rgba(255, 255, 255, 0.5)' }}>
+                {selectedDate.getDate()} {MONTH_NAMES[selectedDate.getMonth()]}, {selectedDate.getFullYear()}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                onClick={() => setSelectedDate(new Date())}
+                title="Go to Today"
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '6px 8px',
+                  color: '#00f2fe',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <CalendarIcon size={14} />
+              </button>
+              <button
+                onClick={handlePrevDay}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '6px 8px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                onClick={handleNextDay}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  padding: '6px 8px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Filter Tabs: Selected Day / Upcoming / Past */}
+          <div style={{
+            display: 'flex',
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: '10px',
+            padding: '3px',
+            marginBottom: '18px'
+          }}>
+            {[
+              { id: 'selected_day', label: 'Selected Day' },
+              { id: 'upcoming', label: 'Upcoming' },
+              { id: 'past', label: 'Past' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setScheduledFilter(tab.id)}
+                style={{
+                  flex: 1,
+                  background: scheduledFilter === tab.id ? 'rgba(0, 122, 255, 0.25)' : 'transparent',
+                  color: scheduledFilter === tab.id ? '#00f2fe' : 'rgba(255, 255, 255, 0.6)',
+                  border: scheduledFilter === tab.id ? '1px solid rgba(0, 242, 254, 0.3)' : '1px solid transparent',
+                  borderRadius: '8px',
+                  padding: '6px',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Meeting Cards List */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            overflowY: 'auto',
+            maxHeight: 'calc(100vh - 280px)',
+            paddingRight: '4px'
+          }}>
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.4)', fontSize: '0.88rem' }}>
+                Loading scheduled meetings...
+              </div>
+            ) : filteredScheduledCalls.length === 0 ? (
+              <div style={{
+                textAlign: 'center',
+                padding: '48px 16px',
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: '16px',
+                border: '1px dashed rgba(255, 255, 255, 0.1)'
+              }}>
+                <Clock size={32} style={{ color: 'rgba(255,255,255,0.25)', marginBottom: '8px' }} />
+                <div style={{ fontWeight: 700, color: '#fff', fontSize: '0.95rem' }}>
+                  No activities scheduled
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.45)', marginTop: '4px', marginBottom: '14px' }}>
+                  {scheduledFilter === 'selected_day' 
+                    ? `Nothing planned on ${selectedDate.toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+                    : 'No meetings found in this view'}
+                </div>
+                <button
+                  onClick={() => openScheduleModal(selectedDate)}
+                  style={{
+                    background: 'rgba(0, 122, 255, 0.15)',
+                    border: '1px solid rgba(0, 122, 255, 0.3)',
+                    color: '#00f2fe',
+                    borderRadius: '10px',
+                    padding: '8px 16px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  + Add Meeting
+                </button>
+              </div>
+            ) : (
+              filteredScheduledCalls.map((call, idx) => {
+                const callDate = new Date(call.scheduledAt);
+                const isHost = (call.host?._id || call.host) === currentUser._id;
+                const isCancelled = call.status === 'cancelled';
+                const accentColor = getTypeColor(idx);
+
+                // Real-time live participant count
+                const liveCount = roomParticipantsMap[call.roomId] || call.liveParticipantCount || 0;
+                const isLiveNow = liveCount > 0;
+
+                // Time strings: e.g. 09:00 - 10:15
+                const startTimeStr = callDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const endTimeDate = new Date(callDate.getTime() + (call.durationMinutes || 30) * 60000);
+                const endTimeStr = endTimeDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                // Duration text: e.g. 45 min, 1 hour
+                const durationMins = call.durationMinutes || 30;
+                const durationLabel = durationMins >= 60 
+                  ? `${Math.floor(durationMins / 60)} hour${durationMins % 60 ? ` ${durationMins % 60}m` : ''}` 
+                  : `${durationMins} min`;
+
+                const attendees = [
+                  call.host,
+                  ...(call.participants || [])
+                ].filter(Boolean);
+
+                return (
+                  <div key={call._id || idx}>
+                    {/* Time Label header above card (like 09:00, 10:00 in reference) */}
+                    <div style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: 'rgba(255, 255, 255, 0.45)',
+                      marginBottom: '6px'
+                    }}>
+                      {startTimeStr}
+                    </div>
+
+                    {/* The Reference Style Card */}
+                    <div style={{
+                      background: '#131b2e',
+                      border: isLiveNow ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: '18px',
+                      padding: '16px 18px',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      boxShadow: isLiveNow ? '0 8px 30px rgba(0, 242, 254, 0.2)' : '0 8px 24px rgba(0, 0, 0, 0.35)',
+                      transition: 'transform 0.15s ease'
+                    }}>
+                      {/* Top Horizontal Colored Accent Bar */}
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: '4px',
+                        background: accentColor
+                      }} />
+
+                      {/* Card Header: Title & Actions */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        marginTop: '2px',
+                        marginBottom: '6px'
+                      }}>
+                        <div>
+                          <h3 style={{
+                            margin: 0,
+                            fontSize: '1.05rem',
+                            fontWeight: 800,
+                            color: '#fff',
+                            lineHeight: 1.3
+                          }}>
+                            {call.title}
+                          </h3>
+                          {call.description && (
+                            <p style={{
+                              margin: '4px 0 0 0',
+                              fontSize: '0.8rem',
+                              color: 'rgba(255, 255, 255, 0.55)',
+                              lineHeight: 1.3
+                            }}>
+                              {call.description}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Host Cancel option */}
+                        {isHost && !isCancelled && (
+                          <button
+                            onClick={() => handleCancelCall(call._id)}
+                            title="Cancel meeting"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'rgba(255, 255, 255, 0.3)',
+                              cursor: 'pointer',
+                              padding: '2px'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.color = '#ff4d4d'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255, 255, 255, 0.3)'}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Time Range & Duration Row */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '0.78rem',
+                        color: 'rgba(255, 255, 255, 0.65)',
+                        margin: '10px 0 14px 0'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <Clock size={13} color="rgba(255,255,255,0.4)" />
+                          <span>{startTimeStr} - {endTimeStr}</span>
+                        </div>
+                        <span style={{ color: 'rgba(255,255,255,0.45)' }}>{durationLabel}</span>
+                      </div>
+
+                      {/* Live Counter & Google Meet Style Link Pill */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '8px',
+                        marginBottom: '14px',
+                        padding: '8px 10px',
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        borderRadius: '12px'
+                      }}>
+                        {/* Live Participant Status */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {isLiveNow ? (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              color: '#00f2fe',
+                              fontSize: '0.78rem',
+                              fontWeight: 800
+                            }}>
+                              <span style={{
+                                width: '7px',
+                                height: '7px',
+                                borderRadius: '50%',
+                                background: '#00f2fe',
+                                boxShadow: '0 0 10px #00f2fe'
+                              }} />
+                              {liveCount} in room
+                            </span>
+                          ) : (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              color: 'rgba(255, 255, 255, 0.4)',
+                              fontSize: '0.75rem'
+                            }}>
+                              <span style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: 'rgba(255,255,255,0.3)'
+                              }} />
+                              Room open (0 in call)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Join / Meet Link Buttons */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {/* Meet Link Join Button */}
+                          <button
+                            onClick={() => handleJoinCall(call)}
+                            style={{
+                              background: isLiveNow
+                                ? 'linear-gradient(135deg, #007aff, #00f2fe)'
+                                : 'rgba(0, 122, 255, 0.15)',
+                              border: isLiveNow ? 'none' : '1px solid rgba(0, 122, 255, 0.35)',
+                              borderRadius: '20px',
+                              padding: '5px 12px',
+                              color: isLiveNow ? '#fff' : '#00f2fe',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px'
+                            }}
+                          >
+                            <Video size={12} /> Meet Link
+                          </button>
+
+                          {/* Copy Link Button */}
+                          <button
+                            onClick={() => copyMeetingLink(call)}
+                            title="Copy Meet Link to share"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: copiedId === call._id ? '#00f2fe' : 'rgba(255, 255, 255, 0.45)',
+                              cursor: 'pointer',
+                              padding: '4px',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                          >
+                            {copiedId === call._id ? <Check size={14} /> : <Share2 size={14} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Attendees Avatars Row (Matching reference) */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {attendees.slice(0, 3).map((u, aIdx) => {
+                            const name = u.communityProfile?.fullName || u.username || 'Member';
+                            const initial = name.charAt(0).toUpperCase();
+                            const avatar = u.communityProfile?.avatarUrl;
+
+                            return (
+                              <div
+                                key={u._id || aIdx}
+                                title={name}
+                                style={{
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '50%',
+                                  background: 'linear-gradient(135deg, #007aff, #a855f7)',
+                                  border: '2px solid #131b2e',
+                                  marginLeft: aIdx > 0 ? '-6px' : '0',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  color: '#fff',
+                                  overflow: 'hidden'
+                                }}
+                              >
+                                {avatar ? (
+                                  <img src={avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : initial}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Name label text */}
+                        <span style={{
+                          fontSize: '0.75rem',
+                          color: 'rgba(255, 255, 255, 0.6)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis'
+                        }}>
+                          {attendees[0]?.communityProfile?.fullName || attendees[0]?.username || 'Host'}
+                          {attendees.length > 1 ? ` and ${attendees.length - 1} more` : ''}
+                        </span>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* --- FLOATING "BRAINSTORM SESSION" / SCHEDULE MODAL POPUP --- */}
+      {/* Exactly replicating the dark card popup from the reference image */}
+      {isModalOpen && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(3, 7, 18, 0.78)',
+          backdropFilter: 'blur(14px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999999,
+          padding: '16px'
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '430px',
+            background: '#131b2e',
+            borderRadius: '22px',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.85)',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            color: '#fff'
+          }}>
+
+            {/* Modal Header: Title & Close */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={modalTitle}
+                onChange={e => setModalTitle(e.target.value)}
+                placeholder="Meeting Title"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: '1.25rem',
+                  fontWeight: 800,
+                  outline: 'none',
+                  width: '90%'
+                }}
+              />
+              <button
+                onClick={() => setIsModalOpen(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.5)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={18} />
               </button>
             </div>
 
@@ -715,300 +1364,395 @@ export default function ScheduleMeetings() {
               <div style={{
                 background: 'rgba(255, 77, 77, 0.15)',
                 border: '1px solid rgba(255, 77, 77, 0.3)',
-                borderRadius: '10px',
-                padding: '10px 14px',
+                borderRadius: '8px',
+                padding: '8px 12px',
                 color: '#ff4d4d',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
+                fontSize: '0.8rem'
               }}>
-                <AlertCircle size={15} /> {errorMsg}
+                {errorMsg}
               </div>
             )}
 
-            <form onSubmit={handleCreateSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Title */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                  MEETING TITLE *
-                </label>
+            <form onSubmit={handleCreateMeeting} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              
+              {/* Row 1: Date */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
+                  Date
+                </span>
                 <input
-                  type="text"
-                  placeholder="e.g. Space Tech Sync, Product Demo"
-                  value={title}
-                  onChange={e => setTitle(e.target.value)}
+                  type="date"
+                  value={modalDate}
+                  onChange={e => setModalDate(e.target.value)}
                   required
                   style={{
-                    width: '100%',
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '10px',
-                    padding: '10px 14px',
+                    padding: '8px 12px',
                     color: '#fff',
-                    fontSize: '0.9rem',
-                    outline: 'none'
+                    fontSize: '0.85rem',
+                    outline: 'none',
+                    colorScheme: 'dark',
+                    flex: 1
                   }}
                 />
               </div>
 
-              {/* Call Type Selector */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                  CALL TYPE
-                </label>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setCallType('video')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '10px',
-                      background: callType === 'video' ? 'rgba(0, 242, 254, 0.2)' : 'rgba(255,255,255,0.05)',
-                      border: callType === 'video' ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.1)',
-                      color: callType === 'video' ? '#00f2fe' : '#fff',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Video size={16} /> Video Call
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCallType('audio')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      borderRadius: '10px',
-                      background: callType === 'audio' ? 'rgba(52, 199, 89, 0.2)' : 'rgba(255,255,255,0.05)',
-                      border: callType === 'audio' ? '1px solid #34c759' : '1px solid rgba(255,255,255,0.1)',
-                      color: callType === 'audio' ? '#34c759' : '#fff',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    <Mic size={16} /> Audio Call
-                  </button>
-                </div>
-              </div>
-
-              {/* Date & Time and Duration */}
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <div style={{ flex: 2 }}>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                    DATE & TIME *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={e => setScheduledAt(e.target.value)}
-                    required
-                    style={{
-                      width: '100%',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
-                      borderRadius: '10px',
-                      padding: '10px 14px',
-                      color: '#fff',
-                      fontSize: '0.85rem',
-                      outline: 'none',
-                      colorScheme: 'dark'
-                    }}
-                  />
-                </div>
-
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                    DURATION
-                  </label>
+              {/* Row 2: Type / Category Dropdown */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
+                  Type
+                </span>
+                <div style={{ position: 'relative', flex: 1 }}>
                   <select
-                    value={durationMinutes}
-                    onChange={e => setDurationMinutes(e.target.value)}
+                    value={modalType}
+                    onChange={e => setModalType(e.target.value)}
                     style={{
                       width: '100%',
-                      background: 'rgba(255, 255, 255, 0.06)',
-                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
                       borderRadius: '10px',
-                      padding: '10px 12px',
+                      padding: '8px 12px',
                       color: '#fff',
                       fontSize: '0.85rem',
                       outline: 'none',
                       cursor: 'pointer'
                     }}
                   >
-                    <option value={15} style={{ background: '#0d1326' }}>15 mins</option>
-                    <option value={30} style={{ background: '#0d1326' }}>30 mins</option>
-                    <option value={45} style={{ background: '#0d1326' }}>45 mins</option>
-                    <option value={60} style={{ background: '#0d1326' }}>1 hour</option>
+                    {MEETING_TYPES.map(t => (
+                      <option key={t.id} value={t.id} style={{ background: '#0f172a' }}>
+                        ● {t.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Description / Agenda */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                  AGENDA / DESCRIPTION (OPTIONAL)
-                </label>
+              {/* Row 3: Call Type (Video or Audio) */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
+                  Media
+                </span>
+                <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalCallType('video')}
+                    style={{
+                      flex: 1,
+                      padding: '6px',
+                      borderRadius: '8px',
+                      background: modalCallType === 'video' ? 'rgba(0, 122, 255, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                      border: modalCallType === 'video' ? '1px solid #007aff' : '1px solid rgba(255,255,255,0.08)',
+                      color: modalCallType === 'video' ? '#00f2fe' : 'rgba(255,255,255,0.6)',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Video size={13} /> Video
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModalCallType('audio')}
+                    style={{
+                      flex: 1,
+                      padding: '6px',
+                      borderRadius: '8px',
+                      background: modalCallType === 'audio' ? 'rgba(52, 199, 89, 0.25)' : 'rgba(255, 255, 255, 0.04)',
+                      border: modalCallType === 'audio' ? '1px solid #34c759' : '1px solid rgba(255,255,255,0.08)',
+                      color: modalCallType === 'audio' ? '#34c759' : 'rgba(255,255,255,0.6)',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Mic size={13} /> Audio
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 4: Hour Range with Steppers (< 11:30 > < 13:00 > in reference) */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
+                  Hour
+                </span>
+
+                <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                  {/* Start Time Stepper */}
+                  <div style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    padding: '4px 6px'
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => setModalStartTime(prev => adjustTime(prev, -15))}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <input
+                      type="time"
+                      value={modalStartTime}
+                      onChange={e => setModalStartTime(e.target.value)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        outline: 'none',
+                        textAlign: 'center',
+                        width: '58px',
+                        colorScheme: 'dark'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalStartTime(prev => adjustTime(prev, 15))}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+
+                  {/* End Time Stepper */}
+                  <div style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '10px',
+                    padding: '4px 6px'
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => setModalEndTime(prev => adjustTime(prev, -15))}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    <input
+                      type="time"
+                      value={modalEndTime}
+                      onChange={e => setModalEndTime(e.target.value)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#fff',
+                        fontSize: '0.82rem',
+                        fontWeight: 700,
+                        outline: 'none',
+                        textAlign: 'center',
+                        width: '58px',
+                        colorScheme: 'dark'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setModalEndTime(prev => adjustTime(prev, 15))}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 5: Note / Description */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px', paddingTop: '6px' }}>
+                  Note
+                </span>
                 <textarea
-                  placeholder="Outline the topics you want to cover..."
-                  value={description}
-                  onChange={e => setDescription(e.target.value)}
+                  value={modalNote}
+                  onChange={e => setModalNote(e.target.value)}
+                  placeholder="Add Note"
                   rows={2}
                   style={{
-                    width: '100%',
-                    background: 'rgba(255, 255, 255, 0.06)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
                     borderRadius: '10px',
-                    padding: '10px 14px',
+                    padding: '8px 12px',
                     color: '#fff',
                     fontSize: '0.85rem',
                     outline: 'none',
-                    resize: 'none'
+                    resize: 'none',
+                    flex: 1
                   }}
                 />
               </div>
 
-              {/* Participant Selection */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, color: 'rgba(255,255,255,0.6)', marginBottom: '6px' }}>
-                  INVITE MEMBERS ({selectedParticipants.length} SELECTED)
-                </label>
-                
-                <div style={{ position: 'relative', marginBottom: '8px' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.4)' }} />
+              {/* Row 6: Members Avatar Stack + Plus Button */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '0.84rem', color: 'rgba(255, 255, 255, 0.5)', width: '70px' }}>
+                  Members
+                </span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  {/* Selected members avatar stack */}
+                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                    {selectedParticipants.slice(0, 4).map((pId, pIdx) => {
+                      const m = allMembers.find(item => item._id === pId);
+                      const name = m?.communityProfile?.fullName || m?.username || 'Member';
+                      return (
+                        <div
+                          key={pId}
+                          title={name}
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '50%',
+                            background: 'linear-gradient(135deg, #007aff, #a855f7)',
+                            border: '2px solid #131b2e',
+                            marginLeft: pIdx > 0 ? '-6px' : '0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            color: '#fff',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {m?.communityProfile?.avatarUrl ? (
+                            <img src={m.communityProfile.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : name.charAt(0).toUpperCase()}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* '+' button to open picker */}
+                  <button
+                    type="button"
+                    onClick={() => setShowMemberPicker(prev => !prev)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px dashed rgba(255, 255, 255, 0.25)',
+                      borderRadius: '50%',
+                      width: '26px',
+                      height: '26px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0
+                    }}
+                  >
+                    <Plus size={13} />
+                  </button>
+
+                  <span style={{ fontSize: '0.76rem', color: 'rgba(255,255,255,0.45)' }}>
+                    {selectedParticipants.length} invited
+                  </span>
+                </div>
+              </div>
+
+              {/* Collapsible Member Search & Selection Box */}
+              {showMemberPicker && (
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  maxHeight: '140px',
+                  overflowY: 'auto'
+                }}>
                   <input
                     type="text"
-                    placeholder="Search community members..."
+                    placeholder="Search members..."
                     value={memberSearch}
                     onChange={e => setMemberSearch(e.target.value)}
                     style={{
                       width: '100%',
-                      background: 'rgba(255, 255, 255, 0.04)',
+                      background: 'rgba(255, 255, 255, 0.05)',
                       border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '8px',
-                      padding: '7px 10px 7px 32px',
+                      borderRadius: '6px',
+                      padding: '5px 8px',
                       color: '#fff',
-                      fontSize: '0.82rem',
-                      outline: 'none'
+                      fontSize: '0.78rem',
+                      outline: 'none',
+                      marginBottom: '8px'
                     }}
                   />
-                </div>
 
-                <div style={{
-                  maxHeight: '160px',
-                  overflowY: 'auto',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '10px',
-                  background: 'rgba(0,0,0,0.25)',
-                  padding: '6px'
-                }}>
-                  {filteredMembers.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', padding: '16px', fontSize: '0.82rem' }}>
-                      No members found.
-                    </div>
-                  ) : (
-                    filteredMembers.map(member => {
-                      const isSelected = selectedParticipants.includes(member._id);
-                      const name = member.communityProfile?.fullName || member.username;
-                      const initial = name.charAt(0).toUpperCase();
-
+                  {allMembers
+                    .filter(m => {
+                      if (!memberSearch.trim()) return true;
+                      const name = (m.communityProfile?.fullName || m.username || '').toLowerCase();
+                      return name.includes(memberSearch.toLowerCase());
+                    })
+                    .map(m => {
+                      const isSel = selectedParticipants.includes(m._id);
+                      const name = m.communityProfile?.fullName || m.username;
                       return (
                         <div
-                          key={member._id}
-                          onClick={() => toggleParticipant(member._id)}
+                          key={m._id}
+                          onClick={() => handleToggleMember(m._id)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'space-between',
-                            padding: '8px 10px',
-                            borderRadius: '8px',
-                            background: isSelected ? 'rgba(0, 242, 254, 0.12)' : 'transparent',
+                            padding: '6px 8px',
+                            borderRadius: '6px',
+                            background: isSel ? 'rgba(0, 122, 255, 0.2)' : 'transparent',
                             cursor: 'pointer',
-                            marginBottom: '4px',
-                            transition: 'background 0.15s ease'
+                            fontSize: '0.8rem'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{
-                              width: '26px',
-                              height: '26px',
-                              borderRadius: '50%',
-                              background: 'linear-gradient(135deg, #00f2fe, #7928ca)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.75rem',
-                              fontWeight: 800,
-                              color: '#fff'
-                            }}>
-                              {initial}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff' }}>{name}</div>
-                              {member.communityProfile?.category && (
-                                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)' }}>
-                                  {member.communityProfile.category}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div style={{
-                            width: '18px',
-                            height: '18px',
-                            borderRadius: '5px',
-                            border: isSelected ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.3)',
-                            background: isSelected ? '#00f2fe' : 'transparent',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}>
-                            {isSelected && <Check size={12} color="#000" />}
-                          </div>
+                          <span>{name}</span>
+                          {isSel && <Check size={13} color="#00f2fe" />}
                         </div>
                       );
-                    })
-                  )}
+                    })}
                 </div>
+              )}
+
+              {/* Save Button (Reference blue pill button) */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  style={{
+                    background: 'linear-gradient(135deg, #007aff 0%, #00c6ff 100%)',
+                    border: 'none',
+                    borderRadius: '20px',
+                    padding: '10px 48px',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: '0.92rem',
+                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 18px rgba(0, 122, 255, 0.45)',
+                    opacity: isSubmitting ? 0.7 : 1,
+                    transition: 'transform 0.15s ease'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                >
+                  {isSubmitting ? 'Saving...' : 'Save'}
+                </button>
               </div>
 
-              {/* Submit Button */}
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                style={{
-                  marginTop: '8px',
-                  background: 'linear-gradient(135deg, #00f2fe 0%, #007aff 100%)',
-                  border: 'none',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  color: '#fff',
-                  fontWeight: 800,
-                  fontSize: '0.92rem',
-                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                  opacity: isSubmitting ? 0.7 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 20px rgba(0, 242, 254, 0.35)'
-                }}
-              >
-                <Calendar size={16} />
-                {isSubmitting ? 'Scheduling...' : 'Schedule Call & Send Invites'}
-              </button>
             </form>
+
           </div>
         </div>
       )}

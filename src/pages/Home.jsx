@@ -492,19 +492,6 @@ export default function Home() {
     });
   };
 
-  const handleJoinScheduledCall = (sched) => {
-    if (!sched || !sched.roomId) return;
-    setSetupModalConfig({
-      roomId: sched.roomId,
-      callType: sched.callType || 'video',
-      recipient: activeRecipient,
-      selectedUserIds: Array.isArray(sched.participants) ? sched.participants.map(p => (p._id || p).toString()) : [],
-      isInitiator: false,
-      isRejoin: true,
-      title: sched.title
-    });
-  };
-
   const handleSetupCompleted = ({ selectedAudioId, selectedVideoId, selectedAudioOutput, isMicMuted, isVideoOff, stream }) => {
     if (!setupModalConfig) return;
 
@@ -1844,90 +1831,17 @@ export default function Home() {
                       const isMe = msg.sender === currentUser._id || msg.sender?._id === currentUser._id;
                       return (
                         <div key={i} style={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-                          {msg.type === 'scheduled_call' ? (
-                            <div style={{
-                              background: 'rgba(13, 19, 38, 0.95)',
-                              border: '1px solid rgba(0, 242, 254, 0.35)',
-                              borderRadius: '16px',
-                              padding: '14px 16px',
-                              color: '#fff',
-                              boxShadow: '0 8px 25px rgba(0,0,0,0.4)',
-                              minWidth: '260px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '10px'
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '6px' }}>
-                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#00f2fe', display: 'flex', alignItems: 'center', gap: '5px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                  <Calendar size={13} /> Scheduled Meeting
-                                </span>
-                                <span style={{
-                                  fontSize: '0.7rem',
-                                  padding: '2px 8px',
-                                  borderRadius: '10px',
-                                  background: (msg.scheduledCallId?.callType || 'video') === 'audio' ? 'rgba(52, 199, 89, 0.2)' : 'rgba(0, 122, 255, 0.2)',
-                                  color: (msg.scheduledCallId?.callType || 'video') === 'audio' ? '#34c759' : '#007aff',
-                                  fontWeight: 700
-                                }}>
-                                  {(msg.scheduledCallId?.callType || 'video') === 'audio' ? '🎙️ Audio' : '📹 Video'}
-                                </span>
-                              </div>
-
-                              <div>
-                                <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#fff', marginBottom: '2px' }}>
-                                  {msg.scheduledCallId?.title || msg.content}
-                                </div>
-                                {msg.scheduledCallId?.scheduledAt && (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', marginTop: '4px' }}>
-                                    <Clock size={12} color="#00f2fe" />
-                                    <span>{new Date(msg.scheduledCallId.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                    <span>•</span>
-                                    <span>{msg.scheduledCallId.durationMinutes || 30} mins</span>
-                                  </div>
-                                )}
-                              </div>
-
-                              <button
-                                onClick={() => {
-                                  if (msg.scheduledCallId?.roomId) {
-                                    handleJoinScheduledCall(msg.scheduledCallId);
-                                  } else {
-                                    navigate('/schedule');
-                                  }
-                                }}
-                                style={{
-                                  marginTop: '2px',
-                                  background: 'linear-gradient(135deg, #00f2fe 0%, #007aff 100%)',
-                                  border: 'none',
-                                  borderRadius: '10px',
-                                  padding: '9px 12px',
-                                  color: '#fff',
-                                  fontWeight: 700,
-                                  fontSize: '0.82rem',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  gap: '6px',
-                                  boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)'
-                                }}
-                              >
-                                <PhoneCall size={14} /> Join Call Now
-                              </button>
-                            </div>
-                          ) : (
-                            <div style={{
-                              padding: '10px 14px',
-                              borderRadius: isMe ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
-                              background: isMe ? 'linear-gradient(135deg, #00f2fe, #007aff)' : 'rgba(255, 255, 255, 0.08)',
-                              color: '#fff',
-                              fontSize: '0.88rem',
-                              lineHeight: 1.4,
-                              boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
-                            }}>
-                              {msg.content}
-                            </div>
-                          )}
+                          <div style={{
+                            padding: '10px 14px',
+                            borderRadius: isMe ? '16px 16px 2px 16px' : '16px 16px 16px 2px',
+                            background: isMe ? 'linear-gradient(135deg, #00f2fe, #007aff)' : 'rgba(255, 255, 255, 0.08)',
+                            color: '#fff',
+                            fontSize: '0.88rem',
+                            lineHeight: 1.4,
+                            boxShadow: '0 4px 15px rgba(0,0,0,0.2)'
+                          }}>
+                            {msg.content}
+                          </div>
                           <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block', textAlign: isMe ? 'right' : 'left' }}>
                             {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
