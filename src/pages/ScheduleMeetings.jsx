@@ -72,31 +72,41 @@ export default function ScheduleMeetings() {
   // Active WebRTC Call & Setup States
   const [setupModalConfig, setSetupModalConfig] = useState(null);
   const [activeCallRoom, setActiveCallRoom] = useState(null);
+  const [socket, setSocket] = useState(null);
   const socketRef = useRef(null);
+  const joinedViaLinkRef = useRef(null);
 
-  const SOCKET_URL = API_URL.replace('/api', '');
+  const SOCKET_URL = API_URL.replace(/\/api$/, '');
 
   // Initialize Socket.io for live updates & call rooms
   useEffect(() => {
     if (!currentUser?._id) return;
 
-    socketRef.current = io(SOCKET_URL, {
+    const s = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 15
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000
     });
 
-    socketRef.current.emit('user_connected', currentUser._id);
+    socketRef.current = s;
+    setSocket(s);
 
-    // Initial query of live participant counts
-    socketRef.current.emit('get_live_room_counts', (counts) => {
-      if (counts && typeof counts === 'object') {
-        setRoomParticipantsMap(counts);
-      }
-    });
+    const onConnect = () => {
+      console.log('[Socket] ScheduleMeetings connected:', s.id);
+      s.emit('register_user', currentUser._id);
+      s.emit('get_live_room_counts', (counts) => {
+        if (counts && typeof counts === 'object') {
+          setRoomParticipantsMap(counts);
+        }
+      });
+    };
+
+    s.on('connect', onConnect);
+    if (s.connected) onConnect();
 
     // Real-time listener for participant changes in any room
-    socketRef.current.on('call_room_participant_update', ({ roomId, participantCount }) => {
+    s.on('call_room_participant_update', ({ roomId, participantCount }) => {
       if (roomId) {
         setRoomParticipantsMap(prev => ({
           ...prev,
@@ -106,7 +116,9 @@ export default function ScheduleMeetings() {
     });
 
     return () => {
-      socketRef.current?.disconnect();
+      s.disconnect();
+      socketRef.current = null;
+      setSocket(null);
     };
   }, [currentUser, SOCKET_URL]);
 
@@ -120,22 +132,42 @@ export default function ScheduleMeetings() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const joinRoomId = params.get('joinRoom');
-    if (joinRoomId && calls.length > 0) {
-      const targetCall = calls.find(c => c.roomId === joinRoomId);
-      if (targetCall) {
-        handleJoinCall(targetCall);
-      } else {
-        // Unknown or custom link room - join as persistent meeting room
-        setSetupModalConfig({
-          roomId: joinRoomId,
-          callType: 'video',
-          isInitiator: false,
-          isRejoin: true,
-          title: 'Google Meet Style Room'
-        });
-      }
+    if (!joinRoomId) return;
+    if (joinedViaLinkRef.current === joinRoomId) return;
+    if (activeCallRoom?.roomId === joinRoomId || setupModalConfig?.roomId === joinRoomId) return;
+
+    joinedViaLinkRef.current = joinRoomId;
+    const targetCall = calls.find(c => c.roomId === joinRoomId);
+    if (targetCall) {
+      handleJoinCall(targetCall);
+    } else {
+      // Direct join link for participants / shared URL
+      setSetupModalConfig({
+        roomId: joinRoomId,
+        callType: 'video',
+        isInitiator: false,
+        isRejoin: true,
+        title: 'Meeting Room'
+      });
     }
   }, [location.search, calls]);
+
+  // Sync title once calls are loaded if joined via generic link
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const joinRoomId = params.get('joinRoom');
+    if (joinRoomId && calls.length > 0) {
+      const match = calls.find(c => c.roomId === joinRoomId);
+      if (match) {
+        if (setupModalConfig?.roomId === joinRoomId && setupModalConfig.title === 'Meeting Room') {
+          setSetupModalConfig(prev => prev ? ({ ...prev, title: match.title }) : prev);
+        }
+        if (activeCallRoom?.roomId === joinRoomId && (!activeCallRoom.title || activeCallRoom.title === 'Meeting Room')) {
+          setActiveCallRoom(prev => prev ? ({ ...prev, title: match.title }) : prev);
+        }
+      }
+    }
+  }, [calls]);
 
   // Handle URL query to prefill scheduling with a specific member
   useEffect(() => {
@@ -655,6 +687,13 @@ export default function ScheduleMeetings() {
     const participantIds = (call.participants || []).map(p => (p._id || p).toString());
     const isHost = (call.host?._id || call.host) === currentUser._id;
 
+    // Keep browser URL synchronized with current room so it's shareable and refresh-resilient
+    const currentParams = new URLSearchParams(location.search);
+    if (currentParams.get('joinRoom') !== call.roomId) {
+      currentParams.set('joinRoom', call.roomId);
+      navigate(`/schedule?${currentParams.toString()}`, { replace: true });
+    }
+
     setSetupModalConfig({
       roomId: call.roomId,
       callType: call.callType || 'video',
@@ -663,6 +702,17 @@ export default function ScheduleMeetings() {
       isRejoin: true,
       title: call.title
     });
+  };
+
+  const handleSetupClose = () => {
+    setSetupModalConfig(null);
+    joinedViaLinkRef.current = null;
+    const params = new URLSearchParams(location.search);
+    if (params.has('joinRoom')) {
+      params.delete('joinRoom');
+      const qs = params.toString();
+      navigate(`/schedule${qs ? '?' + qs : ''}`, { replace: true });
+    }
   };
 
   const handleSetupCompleted = ({ selectedAudioId, selectedVideoId, selectedAudioOutput, isMicMuted, isVideoOff, stream }) => {
@@ -679,7 +729,8 @@ export default function ScheduleMeetings() {
       initialVideoOff: isVideoOff,
       selectedAudioId,
       selectedVideoId,
-      selectedAudioOutput
+      selectedAudioOutput,
+      title: setupModalConfig.title
     });
 
     setSetupModalConfig(null);
@@ -690,6 +741,13 @@ export default function ScheduleMeetings() {
       activeCallRoom.initialStream.getTracks().forEach(t => t.stop());
     }
     setActiveCallRoom(null);
+    joinedViaLinkRef.current = null;
+    const params = new URLSearchParams(location.search);
+    if (params.has('joinRoom')) {
+      params.delete('joinRoom');
+      const qs = params.toString();
+      navigate(`/schedule${qs ? '?' + qs : ''}`, { replace: true });
+    }
   };
 
   // Helper to determine status badge for card (Upcoming, Past, Cancelled, Live Now)
@@ -2377,7 +2435,7 @@ export default function ScheduleMeetings() {
       {/* --- IN-PAGE WEBRTC CALL & DEVICE SETUP MODALS --- */}
       <DeviceSetupModal
         isOpen={Boolean(setupModalConfig)}
-        onClose={() => setSetupModalConfig(null)}
+        onClose={handleSetupClose}
         callRoom={setupModalConfig}
         onJoinCall={handleSetupCompleted}
       />
@@ -2387,7 +2445,7 @@ export default function ScheduleMeetings() {
         onClose={handleCallModalClose}
         currentUser={currentUser}
         callRoom={activeCallRoom}
-        socket={socketRef.current}
+        socket={socket || socketRef.current}
         allMembers={allMembers}
       />
 

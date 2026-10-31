@@ -347,6 +347,18 @@ export default function CallModal({
   useEffect(() => {
     if (!socket || !isOpen) return;
 
+    // 0. Existing room peers upon joining -> Immediately display their cards & prepare WebRTC
+    const handleExistingPeers = ({ peers: existingList }) => {
+      console.log('[WebRTC] Received existing room peers:', existingList);
+      if (!Array.isArray(existingList)) return;
+      existingList.forEach(p => {
+        if (p.socketId && p.socketId !== socket.id) {
+          createPeer(p.socketId, p);
+        }
+      });
+      setCallStatus('connected');
+    };
+
     // 1. Another user joined room -> Existing participants initiate offer
     const handleUserJoined = async ({ socketId, userId, userInfo }) => {
       console.log('[WebRTC] User joined call room:', userInfo?.fullName, socketId);
@@ -478,6 +490,7 @@ export default function CallModal({
       removePeer(socketId);
     };
 
+    socket.on('call_room_existing_peers', handleExistingPeers);
     socket.on('user_joined_call_room', handleUserJoined);
     socket.on('call_peer_offer', handlePeerOffer);
     socket.on('call_peer_answer', handlePeerAnswer);
@@ -486,6 +499,7 @@ export default function CallModal({
     socket.on('user_left_call_room', handleUserLeft);
 
     return () => {
+      socket.off('call_room_existing_peers', handleExistingPeers);
       socket.off('user_joined_call_room', handleUserJoined);
       socket.off('call_peer_offer', handlePeerOffer);
       socket.off('call_peer_answer', handlePeerAnswer);
@@ -885,7 +899,7 @@ export default function CallModal({
             boxShadow: `0 0 10px ${callStatus === 'connected' ? '#00f2fe' : '#ffd200'}`
           }} />
           <h2 style={{ fontSize: '1.1rem', fontWeight: 800, letterSpacing: '-0.02em', margin: 0 }}>
-            {callRoom?.callType === 'video' ? 'WebRTC Space Call' : 'Secure Audio Call'}
+            {callRoom?.title || (callRoom?.callType === 'video' ? 'WebRTC Space Call' : 'Secure Audio Call')}
           </h2>
           <span style={{
             fontSize: '0.8rem',
