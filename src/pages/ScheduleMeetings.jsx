@@ -1953,63 +1953,45 @@ export default function ScheduleMeetings() {
                 </span>
 
                 <div style={{ display: 'flex', gap: '10px', flex: 1 }}>
-                  {/* Start Time Stepper & Dropdown */}
+                  {/* Start Time Dropdown */}
                   <div style={{ flex: 1, position: 'relative' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: showStartTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '10px',
-                      padding: '8px 10px',
-                      transition: 'border 0.2s ease'
-                    }}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStepStartTime(-15);
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                      >
-                        <ChevronLeft size={15} />
-                      </button>
-
-                      <div
-                        onClick={() => {
-                          setShowEndTimeDropdown(false);
-                          setShowStartTimeDropdown(prev => !prev);
-                        }}
-                        title="Click to select start time"
+                    <div
+                      onClick={() => {
+                        setShowEndTimeDropdown(false);
+                        setShowStartTimeDropdown(prev => !prev);
+                      }}
+                      title="Select start time"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: showStartTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        transition: 'border 0.2s ease, background 0.2s ease',
+                        userSelect: 'none'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                    >
+                      <span style={{
+                        color: '#fff',
+                        fontSize: '0.88rem',
+                        fontWeight: 600,
+                        letterSpacing: '0.2px'
+                      }}>
+                        {format24To12(modalStartTime)}
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        color="rgba(255, 255, 255, 0.6)"
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          color: '#fff',
-                          fontSize: '0.88rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.3px',
-                          userSelect: 'none',
-                          cursor: 'pointer',
-                          padding: '2px 4px',
-                          borderRadius: '6px'
+                          transform: showStartTimeDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease'
                         }}
-                      >
-                        <span>{format24To12(modalStartTime)}</span>
-                        <ChevronDown size={12} color="rgba(255, 255, 255, 0.6)" />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStepStartTime(15);
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                      >
-                        <ChevronRight size={15} />
-                      </button>
+                      />
                     </div>
 
                     {/* Start Time Dropdown Menu */}
@@ -2063,63 +2045,45 @@ export default function ScheduleMeetings() {
                     )}
                   </div>
 
-                  {/* End Time Stepper & Dropdown */}
+                  {/* End Time Dropdown */}
                   <div style={{ flex: 1, position: 'relative' }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: showEndTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '10px',
-                      padding: '8px 10px',
-                      transition: 'border 0.2s ease'
-                    }}>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStepEndTime(-15);
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                      >
-                        <ChevronLeft size={15} />
-                      </button>
-
-                      <div
-                        onClick={() => {
-                          setShowStartTimeDropdown(false);
-                          setShowEndTimeDropdown(prev => !prev);
-                        }}
-                        title="Click to select end time"
+                    <div
+                      onClick={() => {
+                        setShowStartTimeDropdown(false);
+                        setShowEndTimeDropdown(prev => !prev);
+                      }}
+                      title="Select end time"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        border: showEndTimeDropdown ? '1px solid #00f2fe' : '1px solid rgba(255, 255, 255, 0.1)',
+                        borderRadius: '10px',
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        transition: 'border 0.2s ease, background 0.2s ease',
+                        userSelect: 'none'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                    >
+                      <span style={{
+                        color: '#fff',
+                        fontSize: '0.88rem',
+                        fontWeight: 600,
+                        letterSpacing: '0.2px'
+                      }}>
+                        {format24To12(modalEndTime)}
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        color="rgba(255, 255, 255, 0.6)"
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          color: '#fff',
-                          fontSize: '0.88rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.3px',
-                          userSelect: 'none',
-                          cursor: 'pointer',
-                          padding: '2px 4px',
-                          borderRadius: '6px'
+                          transform: showEndTimeDropdown ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s ease'
                         }}
-                      >
-                        <span>{format24To12(modalEndTime)}</span>
-                        <ChevronDown size={12} color="rgba(255, 255, 255, 0.6)" />
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStepEndTime(15);
-                        }}
-                        style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                      >
-                        <ChevronRight size={15} />
-                      </button>
+                      />
                     </div>
 
                     {/* End Time Dropdown Menu */}
