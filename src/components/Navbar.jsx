@@ -206,18 +206,18 @@ export default function Navbar() {
                 <LogOut size={16} />
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-support-chat'))}
-              className="btn-header-support"
-              title="Contact Support"
-            >
-              <Headphones size={15} />
-              <span>Support</span>
-            </button>
+        ) : (
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('open-support-chat'))}
+          className="btn-header-support"
+          title="Contact Support"
+        >
+          <Headphones size={15} />
+          <span>Support</span>
+        </button>
           )}
-        </div>
       </div>
-    </nav>
+    </div>
+    </nav >
   );
 }
