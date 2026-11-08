@@ -9,6 +9,7 @@ import Directory from './pages/Directory';
 import MemberDetail from './pages/MemberDetail';
 import UpgradeCommunity from './pages/UpgradeCommunity';
 import ScheduleMeetings from './pages/ScheduleMeetings';
+import SupportChatWidget from './components/SupportChatWidget';
 import './index.css';
 
 function ProtectedRoute({ children }) {
@@ -50,6 +51,7 @@ function App() {
             </Routes>
           </main>
           <Footer />
+          <SupportChatWidget platform="community" />
         </div>
       </BrowserRouter>
     </AuthProvider>
