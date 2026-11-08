@@ -178,6 +178,16 @@ export default function SupportChatWidget({ platform = 'web' }) {
     }
   }, [messages, isOpen]);
 
+  // Support event listener from header button or external triggers
+  useEffect(() => {
+    const handleExternalOpen = () => {
+      setIsOpen(true);
+      setUnreadCount(0);
+    };
+    window.addEventListener('open-support-chat', handleExternalOpen);
+    return () => window.removeEventListener('open-support-chat', handleExternalOpen);
+  }, []);
+
   const handleOpen = () => {
     setIsOpen(true);
     setUnreadCount(0);

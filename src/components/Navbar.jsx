@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Users, MessageSquare, UserCheck, Shield, ExternalLink, LogOut, Sparkles, Bell, Check, Clock, Calendar } from 'lucide-react';
+import { Users, MessageSquare, UserCheck, Shield, ExternalLink, LogOut, Sparkles, Bell, Check, Clock, Calendar, Headphones } from 'lucide-react';
 import './Navbar.css';
 
 export default function Navbar() {
@@ -194,22 +194,27 @@ export default function Navbar() {
                 </div>
               )}
 
-              {getStatusBadge()}
-              <a
-                href={import.meta.env.VITE_WEB_URL || 'http://localhost:5173'}
-                className="btn-link-itv"
-                title="Back to Interplanetary TV"
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('open-support-chat'))}
+                className="btn-header-support"
+                title="Contact Support"
               >
-                <span>ITV Web</span> <ExternalLink size={14} />
-              </a>
+                <Headphones size={15} />
+                <span>Support</span>
+              </button>
               <button onClick={handleLogout} className="btn-logout" title="Sign out">
                 <LogOut size={16} />
               </button>
             </div>
           ) : (
-            <a href={import.meta.env.VITE_WEB_URL || 'http://localhost:5173'} className="btn-link-itv">
-              Back to ITV Web <ExternalLink size={14} />
-            </a>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-support-chat'))}
+              className="btn-header-support"
+              title="Contact Support"
+            >
+              <Headphones size={15} />
+              <span>Support</span>
+            </button>
           )}
         </div>
       </div>

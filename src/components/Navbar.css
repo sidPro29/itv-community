@@ -132,6 +132,28 @@
   background: rgba(0, 242, 254, 0.18);
 }
 
+.btn-header-support {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  padding: 7px 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #007aff 0%, #00c6ff 100%);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(0, 122, 255, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-header-support:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 198, 255, 0.55);
+  background: linear-gradient(135deg, #00c6ff 0%, #007aff 100%);
+}
+
 .btn-logout {
   background: transparent;
   border: none;
