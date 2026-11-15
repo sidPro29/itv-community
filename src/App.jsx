@@ -12,6 +12,20 @@ import ScheduleMeetings from './pages/ScheduleMeetings';
 import SupportChatWidget from './components/SupportChatWidget';
 import './index.css';
 
+function RequireAuth({ children }) {
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: '100px', color: 'var(--text-muted)' }}>Validating Space Community Credentials...</div>;
+  }
+
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
 function ProtectedRoute({ children }) {
   const { currentUser, isSubscribed, loading } = useAuth();
 
@@ -24,9 +38,8 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isSubscribed) {
-    // Redirect to ITV Web Plans if active subscription is missing
-    window.location.href = `${import.meta.env.VITE_WEB_URL || 'http://localhost:5173'}/plans`;
-    return null;
+    // Redirect to upgrade page to choose a community plan
+    return <Navigate to="/upgrade" replace />;
   }
 
   return children;
@@ -47,7 +60,7 @@ function App() {
               <Route path="/members/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
               <Route path="/profile" element={<Navigate to="/" replace />} />
               <Route path="/messages" element={<ProtectedRoute><Home /></ProtectedRoute>} />
-              <Route path="/upgrade" element={<ProtectedRoute><UpgradeCommunity /></ProtectedRoute>} />
+              <Route path="/upgrade" element={<RequireAuth><UpgradeCommunity /></RequireAuth>} />
             </Routes>
           </main>
           <Footer />
