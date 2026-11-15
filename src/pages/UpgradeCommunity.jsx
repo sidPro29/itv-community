@@ -43,7 +43,6 @@ export default function UpgradeCommunity() {
   const currentBadge = verificationBadge || currentUser?.verificationBadge || 'none';
   const isVerified = verificationStatus === 'verified' || currentUser?.verificationStatus === 'verified';
   const activeTier = currentUser?.communitySubscription?.tier || 'free';
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'superAdmin';
 
   const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
   const publishableKey = isProduction ? STRIPE_KEYS.LIVE_KEY : STRIPE_KEYS.TEST_KEY;
@@ -55,7 +54,8 @@ export default function UpgradeCommunity() {
     entrepreneur: 3
   };
 
-  const userLevel = isAdmin ? 3 : (badgeHierarchy[currentBadge] || 0);
+  // Strictly enforce user verification badge level for everyone
+  const userLevel = badgeHierarchy[currentBadge] || 0;
 
   // Fetch plans from backend API
   useEffect(() => {
@@ -211,6 +211,10 @@ export default function UpgradeCommunity() {
 
   const handleOpenCheckout = (tier) => {
     setErrorMsg('');
+    if (userLevel < tier.requiredLevel) {
+      setErrorMsg(`Access restricted: You must have a verified ${tier.badgeLabel} badge to subscribe to this plan.`);
+      return;
+    }
     const targetAmount = selectedCycle === 'Yearly' ? tier.yearlyAmount : tier.monthlyAmount;
     
     // Find matching plan from fetched DB plans
