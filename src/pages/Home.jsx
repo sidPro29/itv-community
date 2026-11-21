@@ -8,7 +8,7 @@ import {
   Sparkles, MessageSquare, User, Shield, Briefcase, GraduationCap, Award, 
   FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, 
   Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming,
-  Users, Search, Camera, Calendar
+  Users, Search, Camera, Calendar, UserPlus, UserCheck, UserMinus
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
@@ -121,8 +121,11 @@ export default function Home() {
   const [liveChatCall, setLiveChatCall] = useState(null);
   const [isGroupCallModalOpen, setIsGroupCallModalOpen] = useState(false);
   const [allMembers, setAllMembers] = useState([]);
-  const [contactTab, setContactTab] = useState('recent'); // 'recent' | 'all'
+  const [contactTab, setContactTab] = useState('recent'); // 'recent' | 'friends' | 'all'
   const [contactSearch, setContactSearch] = useState('');
+  const [friendsData, setFriendsData] = useState({ friends: [], pendingReceived: [], pendingSent: [] });
+  const [activeFriendship, setActiveFriendship] = useState({ status: 'none', friendshipId: null });
+  const [friendshipLoading, setFriendshipLoading] = useState(false);
   const [micMuted, setMicMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
 
@@ -288,8 +291,117 @@ export default function Home() {
     if (currentUser) {
       fetchConversations();
       fetchAllMembers();
+      fetchFriends();
     }
   }, [currentUser]);
+
+  const fetchFriends = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFriendsData(data || { friends: [], pendingReceived: [], pendingSent: [] });
+      }
+    } catch (err) {
+      console.warn('Error fetching friends:', err);
+    }
+  };
+
+  const fetchFriendshipForRecipient = async (rId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/status/${rId}`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActiveFriendship(data);
+      }
+    } catch (err) {
+      console.warn('Error fetching recipient friendship status:', err);
+    }
+  };
+
+  const handleSendFriendRequest = async (targetId) => {
+    setFriendshipLoading(true);
+    setChatErrorMsg('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/request/${targetId}`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.requiresPlan) {
+          if (window.confirm(`${data.msg}\n\nWould you like to upgrade your plan now?`)) {
+            navigate('/upgrade');
+          }
+          return;
+        }
+        setChatErrorMsg(data.msg || 'Unable to send friend request');
+        return;
+      }
+      setActiveFriendship({ status: data.status, friendshipId: data.friendship?._id });
+      fetchFriends();
+    } catch (err) {
+      console.error(err);
+      setChatErrorMsg('Error sending friend request');
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
+
+  const handleRespondFriendRequest = async (friendshipId, action) => {
+    if (!friendshipId) return;
+    setFriendshipLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/respond/${friendshipId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-auth-token': token },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActiveFriendship({ status: data.status, friendshipId: data.friendship?._id });
+        fetchFriends();
+      } else {
+        setChatErrorMsg(data.msg || 'Error updating friend request');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
+
+  const handleRemoveFriend = async (friendshipId) => {
+    if (!friendshipId) return;
+    const isPending = activeFriendship.status === 'pending_sent';
+    const confirmPrompt = isPending ? 'Cancel friend request?' : 'Remove friend connection?';
+    if (!window.confirm(confirmPrompt)) return;
+
+    setFriendshipLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/${friendshipId}`, {
+        method: 'DELETE',
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        setActiveFriendship({ status: 'none', friendshipId: null });
+        fetchFriends();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
 
   const fetchAllMembers = async () => {
     try {
@@ -342,6 +454,7 @@ export default function Home() {
   const fetchRecipient = async (rId) => {
     try {
       const token = localStorage.getItem('token');
+      fetchFriendshipForRecipient(rId);
       const res = await fetch(`${API_URL}/community/members/${rId}`, {
         headers: { 'x-auth-token': token }
       });
@@ -456,6 +569,11 @@ export default function Home() {
 
   const startCall = (type, recipient = activeRecipient) => {
     if (!recipient) return;
+    const isFriend = activeFriendship.status === 'friends' || (friendsData.friends && friendsData.friends.some(f => f._id?.toString() === recipient._id?.toString()));
+    if (!isFriend) {
+      setChatErrorMsg('Voice and video calls are only allowed between accepted friends. Please connect as friends first.');
+      return;
+    }
     setChatErrorMsg('');
     const roomId = 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 
@@ -1546,18 +1664,18 @@ export default function Home() {
             </div>
 
             {/* Tabs & Search for Contacts */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px', background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '10px', background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: '12px' }}>
               <button
                 onClick={() => setContactTab('recent')}
                 style={{
                   flex: 1,
-                  padding: '6px 10px',
+                  padding: '6px 8px',
                   borderRadius: '8px',
                   border: 'none',
                   background: contactTab === 'recent' ? 'rgba(0, 242, 254, 0.18)' : 'transparent',
                   color: contactTab === 'recent' ? 'var(--accent-cyan)' : 'var(--text-muted)',
                   fontWeight: 700,
-                  fontSize: '0.8rem',
+                  fontSize: '0.78rem',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
                 }}
@@ -1565,21 +1683,42 @@ export default function Home() {
                 Recent ({conversations.length})
               </button>
               <button
+                onClick={() => setContactTab('friends')}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: contactTab === 'friends' ? 'rgba(0, 242, 254, 0.18)' : 'transparent',
+                  color: contactTab === 'friends' ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  position: 'relative'
+                }}
+              >
+                Friends ({friendsData.friends?.length || 0})
+                {friendsData.pendingReceived?.length > 0 && (
+                  <span style={{ position: 'absolute', top: '4px', right: '4px', width: '7px', height: '7px', borderRadius: '50%', background: '#ffb822' }} />
+                )}
+              </button>
+              <button
                 onClick={() => setContactTab('all')}
                 style={{
                   flex: 1,
-                  padding: '6px 10px',
+                  padding: '6px 8px',
                   borderRadius: '8px',
                   border: 'none',
                   background: contactTab === 'all' ? 'rgba(0, 242, 254, 0.18)' : 'transparent',
                   color: contactTab === 'all' ? 'var(--accent-cyan)' : 'var(--text-muted)',
                   fontWeight: 700,
-                  fontSize: '0.8rem',
+                  fontSize: '0.78rem',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease'
                 }}
               >
-                All Members ({allMembers.filter(m => m._id?.toString() !== currentUser?._id?.toString()).length})
+                All ({allMembers.filter(m => m._id?.toString() !== currentUser?._id?.toString()).length})
               </button>
             </div>
 
@@ -1605,22 +1744,44 @@ export default function Home() {
             </div>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '240px', overflowY: 'auto', paddingRight: '4px' }}>
+              {/* If Friends tab selected and there are incoming requests, show them at top */}
+              {contactTab === 'friends' && friendsData.pendingReceived && friendsData.pendingReceived.length > 0 && (
+                <div style={{ background: 'rgba(255, 170, 0, 0.12)', border: '1px solid rgba(255, 170, 0, 0.35)', borderRadius: '12px', padding: '10px', marginBottom: '4px' }}>
+                  <div style={{ fontSize: '0.76rem', fontWeight: 800, color: '#ffb822', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Clock size={12} /> Pending Requests ({friendsData.pendingReceived.length})
+                  </div>
+                  {friendsData.pendingReceived.map(req => (
+                    <div key={req._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{req.fullName || req.username}</span>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={() => handleRespondFriendRequest(req.friendshipId, 'accept')} style={{ background: '#38ef7d', color: '#000', border: 'none', borderRadius: '6px', padding: '3px 8px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
+                        <button onClick={() => handleRespondFriendRequest(req.friendshipId, 'reject')} style={{ background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '6px', padding: '3px 8px', fontSize: '0.7rem', cursor: 'pointer' }}>Decline</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {(() => {
                 const otherMembers = allMembers.filter(m => m._id?.toString() !== currentUser?._id?.toString());
-                const displayed = (contactSearch.trim()
-                  ? otherMembers.filter(m => 
+                let sourceList = otherMembers;
+                if (contactTab === 'recent') {
+                  sourceList = conversations.length > 0 ? conversations : otherMembers;
+                } else if (contactTab === 'friends') {
+                  sourceList = friendsData.friends || [];
+                }
+
+                const displayed = contactSearch.trim()
+                  ? sourceList.filter(m => 
                       (m.fullName || m.username || '').toLowerCase().includes(contactSearch.toLowerCase()) ||
                       (m.category || '').toLowerCase().includes(contactSearch.toLowerCase())
                     )
-                  : (contactTab === 'recent' && conversations.length > 0)
-                    ? conversations
-                    : otherMembers
-                );
+                  : sourceList;
 
                 if (displayed.length === 0) {
                   return (
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
-                      No members found.
+                      {contactTab === 'friends' ? 'No friends connected yet. Connect with members to enable voice & video calls!' : 'No members found.'}
                     </p>
                   );
                 }
@@ -1706,9 +1867,50 @@ export default function Home() {
                       {!activeRecipient.communityProfile?.avatarUrl && (activeRecipient.communityProfile?.fullName ? activeRecipient.communityProfile.fullName.charAt(0).toUpperCase() : 'U')}
                     </div>
                     <div>
-                      <h4 style={{ fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                        {activeRecipient.communityProfile?.fullName || activeRecipient.username}
-                      </h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h4 style={{ fontSize: '1rem', fontWeight: 800, color: '#fff', margin: 0 }}>
+                          {activeRecipient.communityProfile?.fullName || activeRecipient.username}
+                        </h4>
+                        
+                        {/* Friendship Badge & Quick Actions */}
+                        {activeFriendship.status === 'friends' && (
+                          <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(56, 239, 125, 0.15)', color: '#38ef7d', border: '1px solid rgba(56, 239, 125, 0.35)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                            <UserCheck size={11} /> Friends
+                          </span>
+                        )}
+                        {activeFriendship.status === 'pending_sent' && (
+                          <span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(255, 170, 0, 0.15)', color: '#ffb822', border: '1px solid rgba(255, 170, 0, 0.35)', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                            <Clock size={11} /> Request Pending
+                          </span>
+                        )}
+                        {activeFriendship.status === 'pending_received' && (
+                          <div style={{ display: 'inline-flex', gap: '4px' }}>
+                            <button 
+                              onClick={() => handleRespondFriendRequest(activeFriendship.friendshipId, 'accept')}
+                              disabled={friendshipLoading}
+                              style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '8px', background: '#38ef7d', color: '#000', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+                            >
+                              Accept Friend
+                            </button>
+                            <button 
+                              onClick={() => handleRespondFriendRequest(activeFriendship.friendshipId, 'reject')}
+                              disabled={friendshipLoading}
+                              style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '8px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer' }}
+                            >
+                              Decline
+                            </button>
+                          </div>
+                        )}
+                        {activeFriendship.status === 'none' && activeRecipient._id !== currentUser?._id && (
+                          <button 
+                            onClick={() => handleSendFriendRequest(activeRecipient._id)}
+                            disabled={friendshipLoading}
+                            style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '12px', background: 'rgba(0, 242, 254, 0.15)', color: '#00f2fe', border: '1px solid rgba(0, 242, 254, 0.35)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px', fontWeight: 700 }}
+                          >
+                            <UserPlus size={11} /> + Add Friend
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -1736,17 +1938,37 @@ export default function Home() {
                     </button>
                     <button 
                       className="btn-secondary" 
-                      style={{ width: '38px', height: '38px', borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                      style={{ 
+                        width: '38px', 
+                        height: '38px', 
+                        borderRadius: '50%', 
+                        padding: 0, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        opacity: activeFriendship.status === 'friends' ? 1 : 0.45,
+                        cursor: activeFriendship.status === 'friends' ? 'pointer' : 'not-allowed'
+                      }} 
                       onClick={() => startCall('audio')}
-                      title="Audio Call"
+                      title={activeFriendship.status === 'friends' ? "Audio Call" : "Audio call requires accepted friendship"}
                     >
                       <PhoneCall size={16} />
                     </button>
                     <button 
                       className="btn-primary" 
-                      style={{ width: '38px', height: '38px', borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                      style={{ 
+                        width: '38px', 
+                        height: '38px', 
+                        borderRadius: '50%', 
+                        padding: 0, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center',
+                        opacity: activeFriendship.status === 'friends' ? 1 : 0.45,
+                        cursor: activeFriendship.status === 'friends' ? 'pointer' : 'not-allowed'
+                      }} 
                       onClick={() => startCall('video')}
-                      title="Video Call"
+                      title={activeFriendship.status === 'friends' ? "Video Call" : "Video call requires accepted friendship"}
                     >
                       <Video size={16} />
                     </button>

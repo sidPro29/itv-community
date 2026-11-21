@@ -211,6 +211,22 @@ export default function MessagingHub() {
     setErrorMsg('');
 
     try {
+      const token = localStorage.getItem('token');
+      const friendRes = await fetch(`${API_URL}/community/friends/status/${recipient._id}`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (friendRes.ok) {
+        const friendData = await friendRes.json();
+        if (friendData.status !== 'friends') {
+          setErrorMsg('Voice and video calls are only allowed between accepted friends. Please connect as friends first.');
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Friendship check in startCall:', e);
+    }
+
+    try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: type === 'video'

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MonitorOff, 
   UserPlus, Users, Volume2, ShieldCheck, Maximize2, Minimize2,
-  Search, Check, X, Settings
+  Search, Check, X, Settings, Clock, Globe
 } from 'lucide-react';
 import { ringback } from '../utils/soundEffects';
 import { RTC_CONFIG } from '../utils/webrtcConfig';
@@ -22,6 +22,8 @@ export default function CallModal({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [callDuration, setCallDuration] = useState(0);
   const [callStatus, setCallStatus] = useState('connecting'); // connecting, ringing, connected
+  const [clockNow, setClockNow] = useState(new Date());
+  const [clockMode, setClockMode] = useState('both'); // 'local' | 'gmt' | 'both'
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [invitedMap, setInvitedMap] = useState({});
@@ -39,8 +41,28 @@ export default function CallModal({
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
-  const iceCandidateQueues = useRef({}); // socketId -> Array of queued ICE candidates
+  iceCandidateQueues = useRef({}); // socketId -> Array of queued ICE candidates
   const timerRef = useRef(null);
+
+  // Live Clock Ticker for Meeting Local/GMT Time
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      setClockNow(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
+
+  const localTimeString = clockNow.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const localTz = (() => {
+    try {
+      const parts = clockNow.toLocaleTimeString([], { timeZoneName: 'short' }).split(' ');
+      return parts[parts.length - 1] || 'Local';
+    } catch (e) {
+      return 'Local';
+    }
+  })();
+  const gmtTimeString = clockNow.toUTCString().slice(17, 25) + ' GMT';
 
   // Initialize Local Media & Room on Open
   useEffect(() => {
@@ -915,6 +937,93 @@ export default function CallModal({
           <span style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Users size={14} /> {totalCount} {totalCount === 1 ? 'Participant' : 'Participants'}
           </span>
+        </div>
+
+        {/* --- LIVE LOCAL & GMT TIME HUD (MEETING CLOCK) --- */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          background: 'rgba(0, 0, 0, 0.55)',
+          padding: '4px 12px',
+          borderRadius: '30px',
+          border: '1px solid rgba(0, 242, 254, 0.28)',
+          boxShadow: '0 0 16px rgba(0, 242, 254, 0.12)'
+        }}>
+          {/* Time Mode Switcher */}
+          <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '20px', padding: '2px', gap: '2px' }}>
+            <button
+              onClick={() => setClockMode('local')}
+              style={{
+                border: 'none',
+                background: clockMode === 'local' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
+                color: clockMode === 'local' ? '#000' : 'rgba(255,255,255,0.7)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Show Local Time"
+            >
+              Local
+            </button>
+            <button
+              onClick={() => setClockMode('gmt')}
+              style={{
+                border: 'none',
+                background: clockMode === 'gmt' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
+                color: clockMode === 'gmt' ? '#000' : 'rgba(255,255,255,0.7)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Show GMT (UTC) Time"
+            >
+              GMT
+            </button>
+            <button
+              onClick={() => setClockMode('both')}
+              style={{
+                border: 'none',
+                background: clockMode === 'both' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
+                color: clockMode === 'both' ? '#000' : 'rgba(255,255,255,0.7)',
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Show Both Local & GMT Time"
+            >
+              Dual
+            </button>
+          </div>
+
+          {/* Constant Digital Clock Display */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace', fontSize: '0.84rem', letterSpacing: '0.04em' }}>
+            {(clockMode === 'local' || clockMode === 'both') && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#00f2fe' }}>
+                <Clock size={13} style={{ color: '#00f2fe' }} />
+                <span>{localTimeString}</span>
+                <span style={{ fontSize: '0.7rem', color: 'rgba(0, 242, 254, 0.7)' }}>({localTz})</span>
+              </span>
+            )}
+            {clockMode === 'both' && (
+              <span style={{ color: 'rgba(255,255,255,0.25)' }}>|</span>
+            )}
+            {(clockMode === 'gmt' || clockMode === 'both') && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#a78bfa' }}>
+                <Globe size={13} style={{ color: '#a78bfa' }} />
+                <span>{gmtTimeString}</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Invite Button */}

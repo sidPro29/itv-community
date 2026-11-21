@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Lock, MessageSquare, PhoneCall, Video, Briefcase, GraduationCap, Award, Link as LinkIcon, Building, ChevronLeft, Sparkles, AlertCircle } from 'lucide-react';
+import { Shield, Lock, MessageSquare, PhoneCall, Video, Briefcase, GraduationCap, Award, Link as LinkIcon, Building, ChevronLeft, Sparkles, AlertCircle, UserPlus, UserCheck, Clock, Check, UserMinus } from 'lucide-react';
 
 export default function MemberDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { verificationStatus, API_URL } = useAuth();
+  const { verificationStatus, API_URL, currentUser } = useAuth();
 
   const [member, setMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [friendship, setFriendship] = useState({ status: 'none', friendshipId: null });
+  const [friendshipLoading, setFriendshipLoading] = useState(false);
+  const [feedbackMsg, setFeedbackMsg] = useState('');
 
   const fetchMemberDetail = async () => {
     try {
@@ -30,9 +33,105 @@ export default function MemberDetail() {
     }
   };
 
+  const fetchFriendshipStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/status/${id}`, {
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFriendship(data);
+      }
+    } catch (err) {
+      console.warn('Error fetching friendship status:', err);
+    }
+  };
+
   useEffect(() => {
     fetchMemberDetail();
+    fetchFriendshipStatus();
   }, [id]);
+
+  const handleSendFriendRequest = async () => {
+    setFriendshipLoading(true);
+    setFeedbackMsg('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/request/${id}`, {
+        method: 'POST',
+        headers: { 'x-auth-token': token }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.requiresPlan) {
+          if (window.confirm(`${data.msg}\n\nWould you like to upgrade your plan now?`)) {
+            navigate('/upgrade');
+          }
+          return;
+        }
+        alert(data.msg || 'Unable to send friend request');
+        return;
+      }
+      setFriendship({ status: data.status, friendshipId: data.friendship?._id });
+      setFeedbackMsg(data.msg || 'Friend request sent!');
+    } catch (err) {
+      console.error(err);
+      alert('Error sending friend request');
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
+
+  const handleRespondFriendRequest = async (action) => {
+    if (!friendship.friendshipId) return;
+    setFriendshipLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/respond/${friendship.friendshipId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-auth-token': token },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFriendship({ status: data.status, friendshipId: data.friendship?._id });
+        setFeedbackMsg(data.msg);
+      } else {
+        alert(data.msg || 'Error updating friend request');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
+
+  const handleRemoveFriend = async () => {
+    if (!friendship.friendshipId) return;
+    const isPending = friendship.status === 'pending_sent';
+    const confirmPrompt = isPending 
+      ? 'Cancel this friend request?' 
+      : 'Are you sure you want to remove this connection from your friends?';
+    if (!window.confirm(confirmPrompt)) return;
+
+    setFriendshipLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/community/friends/${friendship.friendshipId}`, {
+        method: 'DELETE',
+        headers: { 'x-auth-token': token }
+      });
+      if (res.ok) {
+        setFriendship({ status: 'none', friendshipId: null });
+        setFeedbackMsg(isPending ? 'Friend request cancelled' : 'Friend connection removed');
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFriendshipLoading(false);
+    }
+  };
 
   const handleToggleBlock = async () => {
     try {
@@ -51,6 +150,10 @@ export default function MemberDetail() {
   };
 
   const handleConnectAction = (actionType) => {
+    if ((actionType === 'audio' || actionType === 'video') && friendship.status !== 'friends') {
+      alert('Voice and video calls are only allowed between accepted friends. Please connect as friends first by sending a friend request.');
+      return;
+    }
     navigate(`/?recipient=${id}&action=${actionType}`);
   };
 
@@ -129,16 +232,136 @@ export default function MemberDetail() {
 
             {/* Interactive Buttons */}
             {!member.isLocked && (
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <button className="btn-primary" onClick={() => handleConnectAction('text')} disabled={member.isBlockedByMe}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                
+                {/* Friendship Action Button / Status Badge */}
+                {friendship.status === 'none' && (
+                  <button 
+                    className="btn-primary" 
+                    onClick={handleSendFriendRequest} 
+                    disabled={friendshipLoading || member.isBlockedByMe}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <UserPlus size={16} /> Add Friend
+                  </button>
+                )}
+
+                {friendship.status === 'pending_sent' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      padding: '8px 14px',
+                      borderRadius: '12px',
+                      background: 'rgba(255, 170, 0, 0.15)',
+                      border: '1px solid rgba(255, 170, 0, 0.4)',
+                      color: '#ffb822',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <Clock size={15} /> Request Sent (Pending)
+                    </span>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={handleRemoveFriend}
+                      disabled={friendshipLoading}
+                      style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                      title="Cancel friend request"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {friendship.status === 'pending_received' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      className="btn-primary" 
+                      onClick={() => handleRespondFriendRequest('accept')}
+                      disabled={friendshipLoading}
+                      style={{ background: '#38ef7d', color: '#000', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <UserCheck size={16} /> Accept Friend Request
+                    </button>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={() => handleRespondFriendRequest('reject')}
+                      disabled={friendshipLoading}
+                      style={{ padding: '6px 12px', fontSize: '0.8rem' }}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
+
+                {friendship.status === 'friends' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      padding: '8px 14px',
+                      borderRadius: '12px',
+                      background: 'rgba(56, 239, 125, 0.15)',
+                      border: '1px solid rgba(56, 239, 125, 0.4)',
+                      color: '#38ef7d',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}>
+                      <UserCheck size={16} /> Friends
+                    </span>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={handleRemoveFriend}
+                      disabled={friendshipLoading}
+                      style={{ padding: '6px 12px', fontSize: '0.78rem', opacity: 0.75 }}
+                      title="Remove Friend"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+
+                {/* Private Message Button */}
+                <button className="btn-secondary" onClick={() => handleConnectAction('text')} disabled={member.isBlockedByMe}>
                   <MessageSquare size={16} /> Private Message
                 </button>
-                <button className="btn-secondary" onClick={() => handleConnectAction('audio')} disabled={member.isBlockedByMe}>
-                  <PhoneCall size={16} /> Audio Call
-                </button>
-                <button className="btn-secondary" onClick={() => handleConnectAction('video')} disabled={member.isBlockedByMe}>
-                  <Video size={16} /> Video Call
-                </button>
+
+                {/* Audio & Video Call Buttons (Active only when Friends) */}
+                {friendship.status === 'friends' ? (
+                  <>
+                    <button className="btn-secondary" onClick={() => handleConnectAction('audio')} disabled={member.isBlockedByMe}>
+                      <PhoneCall size={16} /> Audio Call
+                    </button>
+                    <button className="btn-secondary" onClick={() => handleConnectAction('video')} disabled={member.isBlockedByMe}>
+                      <Video size={16} /> Video Call
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={() => handleConnectAction('audio')} 
+                      disabled={member.isBlockedByMe}
+                      style={{ opacity: 0.55, cursor: 'not-allowed' }}
+                      title="Only accepted friends can engage in voice calls"
+                    >
+                      <PhoneCall size={16} /> Audio Call (Friends Only)
+                    </button>
+                    <button 
+                      className="btn-secondary" 
+                      onClick={() => handleConnectAction('video')} 
+                      disabled={member.isBlockedByMe}
+                      style={{ opacity: 0.55, cursor: 'not-allowed' }}
+                      title="Only accepted friends can engage in video calls"
+                    >
+                      <Video size={16} /> Video Call (Friends Only)
+                    </button>
+                  </>
+                )}
+
+                {/* Block / Unblock Button */}
                 <button 
                   className="btn-secondary" 
                   style={{ color: member.isBlockedByMe ? '#38ef7d' : '#ff4d4d', borderColor: member.isBlockedByMe ? '#38ef7d' : '#ff4d4d' }}
@@ -149,6 +372,12 @@ export default function MemberDetail() {
               </div>
             )}
           </div>
+
+          {feedbackMsg && (
+            <div style={{ marginTop: '12px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(0, 242, 254, 0.12)', border: '1px solid rgba(0, 242, 254, 0.3)', color: '#00f2fe', fontSize: '0.88rem' }}>
+              {feedbackMsg}
+            </div>
+          )}
 
           <p style={{ marginTop: '20px', color: '#e2e8f0', fontSize: '1rem', lineHeight: 1.6 }}>
             {member.bio || 'Space enthusiast & member of the Interplanetary Community.'}

@@ -65,12 +65,17 @@ export default function UpgradeCommunity() {
         const res = await fetch(`${API_URL}/plans`);
         if (res.ok) {
           const data = await res.json();
-          // Filter community plans only
+          // Filter community plans only and sort by CMS order
           const commPlans = data.filter(p => 
             p.type === 'community' || 
             p.category === 'community' ||
             p.name.toLowerCase().includes('space')
-          );
+          ).sort((a, b) => {
+            if (a.order !== undefined && b.order !== undefined && a.order !== b.order) {
+              return a.order - b.order;
+            }
+            return a.amount - b.amount;
+          });
           setPlans(commPlans);
         }
       } catch (err) {
