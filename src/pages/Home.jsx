@@ -8,7 +8,7 @@ import {
   Sparkles, MessageSquare, User, Shield, Briefcase, GraduationCap, Award, 
   FileText, CheckCircle2, Clock, AlertTriangle, Plus, Trash2, Link as LinkIcon, 
   Building, Upload, Loader2, MapPin, ExternalLink, Globe, X, Edit3, Eye, PhoneIncoming,
-  Users, Search, Camera, Calendar, UserPlus, UserCheck, UserMinus
+  Users, Search, Camera, Calendar, UserPlus, UserCheck, UserMinus, Lock
 } from 'lucide-react';
 import CallModal from '../components/CallModal';
 import GroupCallModal from '../components/GroupCallModal';
@@ -499,6 +499,11 @@ export default function Home() {
   const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || !activeRecipient) return;
+
+    if (activeFriendship.status !== 'friends') {
+      setChatErrorMsg('Chat is disabled until your friend request is approved. Please connect as friends first.');
+      return;
+    }
 
     setChatErrorMsg('');
     try {
@@ -2073,20 +2078,75 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Chat Input Field & Send Button (Full width) */}
-                <form onSubmit={handleSendMessage} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border-glass)', display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Type your message..."
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    style={{ borderRadius: '24px', fontSize: '0.88rem', padding: '10px 18px', flex: 1, width: '100%' }}
-                  />
-                  <button type="submit" className="btn-primary" style={{ width: '40px', height: '40px', borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Send size={16} />
-                  </button>
-                </form>
+                {/* Chat Input or Friend Request Gate */}
+                {activeFriendship.status === 'friends' ? (
+                  <form onSubmit={handleSendMessage} style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderTop: '1px solid var(--border-glass)', display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Type your message..."
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      style={{ borderRadius: '24px', fontSize: '0.88rem', padding: '10px 18px', flex: 1, width: '100%' }}
+                    />
+                    <button type="submit" className="btn-primary" style={{ width: '40px', height: '40px', borderRadius: '50%', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Send size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <div style={{
+                    padding: '16px 20px',
+                    background: 'rgba(10, 14, 28, 0.95)',
+                    borderTop: '1px solid var(--border-glass)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '10px',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#ffb822', fontSize: '0.88rem', fontWeight: 700 }}>
+                      <Lock size={16} />
+                      <span>Chat disabled until friend request is approved</span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      You must be accepted friends with {activeRecipient?.communityProfile?.fullName || activeRecipient?.username || 'this member'} to send messages and make calls.
+                    </p>
+                    <div style={{ marginTop: '4px' }}>
+                      {activeFriendship.status === 'pending_sent' && (
+                        <span style={{ fontSize: '0.8rem', padding: '6px 14px', borderRadius: '14px', background: 'rgba(255, 170, 0, 0.15)', color: '#ffb822', border: '1px solid rgba(255, 170, 0, 0.35)', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                          <Clock size={13} /> Friend Request Pending Approval
+                        </span>
+                      )}
+                      {activeFriendship.status === 'pending_received' && (
+                        <div style={{ display: 'inline-flex', gap: '8px' }}>
+                          <button 
+                            onClick={() => handleRespondFriendRequest(activeFriendship.friendshipId, 'accept')}
+                            disabled={friendshipLoading}
+                            style={{ fontSize: '0.82rem', padding: '6px 16px', borderRadius: '12px', background: '#38ef7d', color: '#000', border: 'none', cursor: 'pointer', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <UserCheck size={14} /> Accept Friend Request
+                          </button>
+                          <button 
+                            onClick={() => handleRespondFriendRequest(activeFriendship.friendshipId, 'reject')}
+                            disabled={friendshipLoading}
+                            style={{ fontSize: '0.82rem', padding: '6px 14px', borderRadius: '12px', background: 'rgba(255,255,255,0.08)', color: '#fff', border: '1px solid var(--border-glass)', cursor: 'pointer' }}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
+                      {activeFriendship.status === 'none' && activeRecipient?._id !== currentUser?._id && (
+                        <button 
+                          onClick={() => handleSendFriendRequest(activeRecipient._id)}
+                          disabled={friendshipLoading}
+                          style={{ fontSize: '0.84rem', padding: '7px 20px', borderRadius: '16px', background: 'linear-gradient(135deg, #00f2fe, #4facfe)', color: '#000', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 800, boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)' }}
+                        >
+                          <UserPlus size={15} /> Send Friend Request to Chat
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--text-muted)', padding: '20px' }}>

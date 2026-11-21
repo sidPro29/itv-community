@@ -150,8 +150,8 @@ export default function MemberDetail() {
   };
 
   const handleConnectAction = (actionType) => {
-    if ((actionType === 'audio' || actionType === 'video') && friendship.status !== 'friends') {
-      alert('Voice and video calls are only allowed between accepted friends. Please connect as friends first by sending a friend request.');
+    if (friendship.status !== 'friends') {
+      alert('Messaging and calls are only allowed between accepted friends. Please connect as friends first by sending a friend request.');
       return;
     }
     navigate(`/?recipient=${id}&action=${actionType}`);
@@ -323,10 +323,22 @@ export default function MemberDetail() {
                   </div>
                 )}
 
-                {/* Private Message Button */}
-                <button className="btn-secondary" onClick={() => handleConnectAction('text')} disabled={member.isBlockedByMe}>
-                  <MessageSquare size={16} /> Private Message
-                </button>
+                {/* Private Message Button (Active only when Friends) */}
+                {friendship.status === 'friends' ? (
+                  <button className="btn-secondary" onClick={() => handleConnectAction('text')} disabled={member.isBlockedByMe}>
+                    <MessageSquare size={16} /> Private Message
+                  </button>
+                ) : (
+                  <button 
+                    className="btn-secondary" 
+                    onClick={() => handleConnectAction('text')} 
+                    disabled={member.isBlockedByMe}
+                    style={{ opacity: 0.55, cursor: 'not-allowed' }}
+                    title="Only accepted friends can engage in chat"
+                  >
+                    <MessageSquare size={16} /> Private Message (Friends Only)
+                  </button>
+                )}
 
                 {/* Audio & Video Call Buttons (Active only when Friends) */}
                 {friendship.status === 'friends' ? (

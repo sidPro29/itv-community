@@ -161,6 +161,9 @@ export default function MessagingHub() {
           navigate('/upgrade');
           return;
         }
+        if (data.requiresFriendship) {
+          throw new Error('Chat is disabled until your friend request is approved. Please connect as friends first.');
+        }
         throw new Error(data.msg || 'Failed to send message');
       }
 
