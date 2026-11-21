@@ -41,7 +41,7 @@ export default function CallModal({
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const peerConnectionsRef = useRef({}); // socketId -> RTCPeerConnection
-  iceCandidateQueues = useRef({}); // socketId -> Array of queued ICE candidates
+  const iceCandidateQueues = useRef({}); // socketId -> Array of queued ICE candidates
   const timerRef = useRef(null);
 
   // Live Clock Ticker for Meeting Local/GMT Time
