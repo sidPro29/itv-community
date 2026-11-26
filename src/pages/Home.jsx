@@ -17,6 +17,34 @@ import { ringtone } from '../utils/soundEffects';
 
 const HARDCODED_VIDEO_URL = 'https://service.webvideocore.net/CL1olYogIrDWvwqiIKK7eHbBxDyYany25g-L4QOVH5_l5daXY9tfEZPDJS0YHgpW/a_td54sa9zvwgw.m3u8';
 
+const VISIBILITY_FIELDS = [
+  { key: 'avatarUrl', label: 'Profile Picture' },
+  { key: 'coverUrl', label: 'Cover Banner' },
+  { key: 'mobile', label: 'Mobile Number' },
+  { key: 'email', label: 'Email Address' },
+  { key: 'bio', label: 'Bio / About' },
+  { key: 'location', label: 'Location' },
+  { key: 'category', label: 'Category Badge' },
+  { key: 'links', label: 'LinkedIn & External Links' },
+  { key: 'workExperience', label: 'Work Experience' },
+  { key: 'education', label: 'Education & Degrees' },
+  { key: 'skills', label: 'Skills & Tech Stack' },
+  { key: 'certificates', label: 'Certificates & Licenses' },
+  { key: 'businessDetails', label: 'Business & Company Details' }
+];
+
+const buildDefaultVisibility = (saved = {}) => {
+  const result = {};
+  VISIBILITY_FIELDS.forEach(({ key }) => {
+    const existing = saved?.[key] || {};
+    result[key] = {
+      planHolders: existing.planHolders !== false,
+      friends: existing.friends !== false
+    };
+  });
+  return result;
+};
+
 const ICE_SERVERS = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -89,6 +117,8 @@ export default function Home() {
   const [skillInput, setSkillInput] = useState('');
   const [certificates, setCertificates] = useState([]);
   const [businessDetails, setBusinessDetails] = useState({ companyName: '', designation: '', website: '', industry: '', description: '' });
+  const [mobile, setMobile] = useState('');
+  const [visibilitySettings, setVisibilitySettings] = useState(() => buildDefaultVisibility());
 
   // Verification Docs
   const [idDocumentUrl, setIdDocumentUrl] = useState('');
@@ -175,6 +205,8 @@ export default function Home() {
       setSkills(communityProfile.skills || []);
       setCertificates(communityProfile.certificates || []);
       if (communityProfile.businessDetails) setBusinessDetails(communityProfile.businessDetails);
+      setMobile(currentUser.mobile || '');
+      setVisibilitySettings(buildDefaultVisibility(communityProfile.visibilitySettings));
 
       if (currentUser.verificationDocs) {
         setIdDocumentUrl(currentUser.verificationDocs.idDocumentUrl || '');
@@ -825,7 +857,7 @@ export default function Home() {
       const fileUrl = await uploadFileToServer(file);
       setAvatarUrl(fileUrl);
       const token = localStorage.getItem('token');
-      await fetch(`${API_URL}/community/profile`, {
+      const res = await fetch(`${API_URL}/community/profile`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -833,12 +865,17 @@ export default function Home() {
         },
         body: JSON.stringify({ avatarUrl: fileUrl })
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.msg || 'Failed to save profile picture');
+      }
       await refreshProfile();
       setProfileSuccessMsg('Profile picture updated successfully!');
     } catch (err) {
       setProfileErrorMsg('Avatar upload error: ' + err.message);
     } finally {
       setUploadingAvatar(false);
+      e.target.value = '';
     }
   };
 
@@ -851,7 +888,7 @@ export default function Home() {
       const fileUrl = await uploadFileToServer(file);
       setCoverUrl(fileUrl);
       const token = localStorage.getItem('token');
-      await fetch(`${API_URL}/community/profile`, {
+      const res = await fetch(`${API_URL}/community/profile`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -859,12 +896,17 @@ export default function Home() {
         },
         body: JSON.stringify({ coverUrl: fileUrl })
       });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.msg || 'Failed to save cover banner');
+      }
       await refreshProfile();
       setProfileSuccessMsg('Cover banner updated successfully!');
     } catch (err) {
       setProfileErrorMsg('Cover banner upload error: ' + err.message);
     } finally {
       setUploadingCover(false);
+      e.target.value = '';
     }
   };
 
@@ -931,6 +973,8 @@ export default function Home() {
         skills,
         certificates,
         businessDetails,
+        mobile,
+        visibilitySettings,
         verificationDocs: {
           idDocumentUrl,
           docType,
@@ -1422,9 +1466,17 @@ export default function Home() {
                     </div>
                     <textarea className="form-textarea" rows={3} value={bio} onChange={handleBioChange} />
                   </div>
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <div className="form-group">
                     <label>Location</label>
                     <input type="text" className="form-input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="e.g. New Delhi, India" />
+                  </div>
+                  <div className="form-group">
+                    <label>Mobile Number</label>
+                    <input type="text" className="form-input" value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="e.g. +1 555-0123" />
+                  </div>
+                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                    <label>Email Address (Account)</label>
+                    <input type="text" className="form-input" value={currentUser?.email || ''} disabled style={{ opacity: 0.7, cursor: 'not-allowed' }} />
                   </div>
                 </div>
               </div>
@@ -1618,6 +1670,64 @@ export default function Home() {
                     <label>Website URL</label>
                     <input type="text" className="form-input" value={businessDetails.website} onChange={(e) => setBusinessDetails({ ...businessDetails, website: e.target.value })} placeholder="https://..." />
                   </div>
+                </div>
+              </div>
+
+              {/* Section 8: Profile Visibility & Privacy Settings */}
+              <div className="glass-panel" style={{ padding: '24px', borderRadius: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+                  <div>
+                    <h4 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                      <Eye size={18} style={{ color: 'var(--accent-cyan)' }} /> 8. Directory Profile Visibility Settings
+                    </h4>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      Control who can see each detail when viewing your profile in the Directory. (Your Name is always visible).
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-glass)', color: 'var(--text-muted)', textAlign: 'left' }}>
+                        <th style={{ padding: '10px 8px', fontWeight: 600 }}>Profile Field</th>
+                        <th style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'center' }}>Members with Plan</th>
+                        <th style={{ padding: '10px 8px', fontWeight: 600, textAlign: 'center' }}>Accepted Friends</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {VISIBILITY_FIELDS.map(({ key, label }) => {
+                        const fieldVis = visibilitySettings[key] || { planHolders: true, friends: true };
+                        return (
+                          <tr key={key} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '10px 8px', color: '#e2e8f0', fontWeight: 500 }}>{label}</td>
+                            <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={fieldVis.planHolders !== false}
+                                onChange={(e) => setVisibilitySettings(prev => ({
+                                  ...prev,
+                                  [key]: { ...fieldVis, planHolders: e.target.checked }
+                                }))}
+                                style={{ width: '17px', height: '17px', accentColor: '#00f2fe', cursor: 'pointer' }}
+                              />
+                            </td>
+                            <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={fieldVis.friends !== false}
+                                onChange={(e) => setVisibilitySettings(prev => ({
+                                  ...prev,
+                                  [key]: { ...fieldVis, friends: e.target.checked }
+                                }))}
+                                style={{ width: '17px', height: '17px', accentColor: '#38ef7d', cursor: 'pointer' }}
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 

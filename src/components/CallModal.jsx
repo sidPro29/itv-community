@@ -24,6 +24,7 @@ export default function CallModal({
   const [callStatus, setCallStatus] = useState('connecting'); // connecting, ringing, connected
   const [clockNow, setClockNow] = useState(new Date());
   const [clockMode, setClockMode] = useState('both'); // 'local' | 'gmt' | 'both'
+  const [showPeoplePanel, setShowPeoplePanel] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteSearch, setInviteSearch] = useState('');
   const [invitedMap, setInvitedMap] = useState({});
@@ -63,6 +64,25 @@ export default function CallModal({
     }
   })();
   const gmtTimeString = clockNow.toUTCString().slice(17, 25) + ' GMT';
+
+  const formatParticipantLocalTime = (timeZone, utcOffsetMinutes) => {
+    if (timeZone) {
+      try {
+        return clockNow.toLocaleTimeString([], {
+          timeZone,
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      } catch (e) {}
+    }
+    if (typeof utcOffsetMinutes === 'number' && !Number.isNaN(utcOffsetMinutes)) {
+      const shifted = new Date(clockNow.getTime() + utcOffsetMinutes * 60000);
+      const hh = String(shifted.getUTCHours()).padStart(2, '0');
+      const mm = String(shifted.getUTCMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+    return '--:--';
+  };
 
   // Initialize Local Media & Room on Open
   useEffect(() => {
@@ -150,6 +170,8 @@ export default function CallModal({
           fullName: currentUser.communityProfile?.fullName || currentUser.username,
           avatarUrl: currentUser.communityProfile?.avatarUrl,
           category: currentUser.communityProfile?.category,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+          utcOffsetMinutes: -new Date().getTimezoneOffset(),
           isVideoOff: initialVideoOff,
           isAudioMuted: initialMicMuted
         }
@@ -401,6 +423,8 @@ export default function CallModal({
             userId: currentUser._id,
             fullName: currentUser.communityProfile?.fullName || currentUser.username,
             avatarUrl: currentUser.communityProfile?.avatarUrl,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+            utcOffsetMinutes: -new Date().getTimezoneOffset(),
             isVideoOff: isScreenSharing ? false : isVideoOff,
             isAudioMuted: isMicMuted,
             isScreenSharing: isScreenSharing
@@ -439,6 +463,8 @@ export default function CallModal({
             userId: currentUser._id,
             fullName: currentUser.communityProfile?.fullName || currentUser.username,
             avatarUrl: currentUser.communityProfile?.avatarUrl,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+            utcOffsetMinutes: -new Date().getTimezoneOffset(),
             isVideoOff: isScreenSharing ? false : isVideoOff,
             isAudioMuted: isMicMuted,
             isScreenSharing: isScreenSharing
@@ -1026,31 +1052,58 @@ export default function CallModal({
           </div>
         </div>
 
-        {/* Invite Button */}
-        <button
-          onClick={() => setShowInviteModal(true)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            background: 'rgba(255, 255, 255, 0.08)',
-            color: '#fff',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            padding: '8px 16px',
-            borderRadius: '20px',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            transition: 'all 0.2s ease'
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
-        >
-          <UserPlus size={16} color="var(--accent-cyan, #00f2fe)" />
-          <span>Invite Person</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* People List Toggle Button */}
+          <button
+            onClick={() => setShowPeoplePanel(prev => !prev)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: showPeoplePanel ? 'rgba(0, 242, 254, 0.16)' : 'rgba(255, 255, 255, 0.08)',
+              color: '#fff',
+              border: showPeoplePanel ? '1px solid rgba(0, 242, 254, 0.45)' : '1px solid rgba(255, 255, 255, 0.15)',
+              padding: '8px 14px',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              transition: 'all 0.2s ease'
+            }}
+            title="Show/Hide People in Meeting"
+          >
+            <Users size={16} color="var(--accent-cyan, #00f2fe)" />
+            <span>People ({totalCount})</span>
+          </button>
+
+          {/* Invite Button */}
+          <button
+            onClick={() => setShowInviteModal(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(255, 255, 255, 0.08)',
+              color: '#fff',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              transition: 'all 0.2s ease'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+          >
+            <UserPlus size={16} color="var(--accent-cyan, #00f2fe)" />
+            <span>Invite Person</span>
+          </button>
+        </div>
       </div>
 
+      {/* --- MAIN STAGE: VIDEO GRID + PEOPLE SIDEBAR --- */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
       {/* --- VIDEO GRID CANVAS --- */}
       <div style={{
         flex: 1,
@@ -1204,6 +1257,160 @@ export default function CallModal({
           </div>
         )}
 
+      </div>
+
+      {/* --- PEOPLE IN MEETING PANEL (with each person's Local Time before their name) --- */}
+      {showPeoplePanel && (
+        <div style={{
+          width: '300px',
+          minWidth: '260px',
+          background: 'rgba(10, 14, 28, 0.92)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          <div style={{
+            padding: '14px 16px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '0.92rem', color: '#fff' }}>
+              <Users size={16} color="#00f2fe" />
+              <span>People ({totalCount})</span>
+            </div>
+            <button
+              onClick={() => setShowPeoplePanel(false)}
+              style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', padding: '2px' }}
+              title="Close People list"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Local User Row */}
+            {(() => {
+              const myLocalTime = formatParticipantLocalTime(
+                Intl.DateTimeFormat().resolvedOptions().timeZone,
+                -new Date().getTimezoneOffset()
+              );
+              const myName = currentUser?.communityProfile?.fullName || currentUser?.username || 'You';
+              const myAvatar = currentUser?.communityProfile?.avatarUrl;
+              return (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  background: 'rgba(0, 242, 254, 0.08)',
+                  border: '1px solid rgba(0, 242, 254, 0.22)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                    <span style={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#00f2fe',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      padding: '3px 7px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      flexShrink: 0
+                    }} title="Participant Local Time">
+                      {myLocalTime}
+                    </span>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: myAvatar ? `url(${myAvatar}) center/cover` : 'linear-gradient(135deg, #00f2fe, #7928ca)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#fff',
+                      flexShrink: 0
+                    }}>
+                      {!myAvatar && myName.charAt(0).toUpperCase()}
+                    </div>
+                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {myName} (You)
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {isMicMuted ? <MicOff size={14} color="#ff4d4d" /> : <Mic size={14} color="#38ef7d" />}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Remote Participants Rows */}
+            {peerList.map((peer) => {
+              const pName = peer.userInfo?.fullName || 'Participant';
+              const pAvatar = peer.userInfo?.avatarUrl;
+              const pLocalTime = formatParticipantLocalTime(
+                peer.userInfo?.timeZone,
+                peer.userInfo?.utcOffsetMinutes
+              );
+              return (
+                <div key={peer.socketId} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                    <span style={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#00f2fe',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      padding: '3px 7px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      flexShrink: 0
+                    }} title="Participant Local Time">
+                      {pLocalTime}
+                    </span>
+                    <div style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: pAvatar ? `url(${pAvatar}) center/cover` : 'linear-gradient(135deg, #6366f1, #a855f7)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#fff',
+                      flexShrink: 0
+                    }}>
+                      {!pAvatar && pName.charAt(0).toUpperCase()}
+                    </div>
+                    <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {pName}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {peer.isAudioMuted ? <MicOff size={14} color="#ff4d4d" /> : <Mic size={14} color="#38ef7d" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       </div>
 
       {/* --- BOTTOM FLOATING ACTION CONTROLS --- */}

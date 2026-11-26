@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Lock, MessageSquare, PhoneCall, Video, Briefcase, GraduationCap, Award, Link as LinkIcon, Building, ChevronLeft, Sparkles, AlertCircle, UserPlus, UserCheck, Clock, Check, UserMinus } from 'lucide-react';
+import { Shield, Lock, MessageSquare, PhoneCall, Video, Briefcase, GraduationCap, Award, Link as LinkIcon, Building, ChevronLeft, Sparkles, AlertCircle, UserPlus, UserCheck, Clock, Check, UserMinus, Mail, Phone, ExternalLink } from 'lucide-react';
 
 export default function MemberDetail() {
   const { id } = useParams();
@@ -189,7 +189,7 @@ export default function MemberDetail() {
         {/* Cover Graphic */}
         <div style={{
           height: '160px',
-          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(121, 40, 202, 0.3) 100%)',
+          background: member.coverUrl ? `url(${member.coverUrl}) center/cover` : 'linear-gradient(135deg, rgba(0, 242, 254, 0.25) 0%, rgba(121, 40, 202, 0.3) 100%)',
           position: 'relative'
         }} />
 
@@ -219,10 +219,12 @@ export default function MemberDetail() {
                 <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.8rem', fontWeight: 800 }}>
                   {member.fullName}
                 </h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
-                  <span className={`badge-category badge-${member.category}`}>
-                    🚀 {member.category.toUpperCase()}
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', flexWrap: 'wrap' }}>
+                  {member.category && (
+                    <span className={`badge-category badge-${member.category}`}>
+                      🚀 {member.category.toUpperCase()}
+                    </span>
+                  )}
                   {member.location && (
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>📍 {member.location}</span>
                   )}
@@ -391,9 +393,36 @@ export default function MemberDetail() {
             </div>
           )}
 
-          <p style={{ marginTop: '20px', color: '#e2e8f0', fontSize: '1rem', lineHeight: 1.6 }}>
-            {member.bio || 'Space enthusiast & member of the Interplanetary Community.'}
-          </p>
+          {member.bio && (
+            <p style={{ marginTop: '20px', color: '#e2e8f0', fontSize: '1rem', lineHeight: 1.6 }}>
+              {member.bio}
+            </p>
+          )}
+
+          {(member.email || member.mobile || member.linkedinUrl || (member.additionalLinks && member.additionalLinks.length > 0)) && !member.isLocked && (
+            <div style={{ marginTop: '18px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {member.email && (
+                <a href={`mailto:${member.email}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-glass)', color: '#e2e8f0', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  <Mail size={14} style={{ color: 'var(--accent-cyan)' }} /> {member.email}
+                </a>
+              )}
+              {member.mobile && (
+                <a href={`tel:${member.mobile}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-glass)', color: '#e2e8f0', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  <Phone size={14} style={{ color: '#38ef7d' }} /> {member.mobile}
+                </a>
+              )}
+              {member.linkedinUrl && (
+                <a href={member.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '10px', background: 'rgba(0, 242, 254, 0.08)', border: '1px solid rgba(0, 242, 254, 0.25)', color: '#00f2fe', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  <LinkIcon size={14} /> LinkedIn <ExternalLink size={12} />
+                </a>
+              )}
+              {member.additionalLinks && member.additionalLinks.map((lnk, idx) => lnk.url && (
+                <a key={idx} href={lnk.url} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-glass)', color: '#e2e8f0', fontSize: '0.85rem', textDecoration: 'none' }}>
+                  <LinkIcon size={14} /> {lnk.label || lnk.url} <ExternalLink size={12} />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
