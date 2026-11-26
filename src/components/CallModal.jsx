@@ -965,91 +965,23 @@ export default function CallModal({
           </span>
         </div>
 
-        {/* --- LIVE LOCAL & GMT TIME HUD (MEETING CLOCK) --- */}
+        {/* --- LIVE TIME HUD (MEETING CLOCK) --- */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '10px',
+          gap: '8px',
           background: 'rgba(0, 0, 0, 0.55)',
-          padding: '4px 12px',
+          padding: '6px 14px',
           borderRadius: '30px',
           border: '1px solid rgba(0, 242, 254, 0.28)',
-          boxShadow: '0 0 16px rgba(0, 242, 254, 0.12)'
+          boxShadow: '0 0 16px rgba(0, 242, 254, 0.12)',
+          fontFamily: 'monospace',
+          fontSize: '0.86rem',
+          letterSpacing: '0.04em',
+          color: '#00f2fe'
         }}>
-          {/* Time Mode Switcher */}
-          <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '20px', padding: '2px', gap: '2px' }}>
-            <button
-              onClick={() => setClockMode('local')}
-              style={{
-                border: 'none',
-                background: clockMode === 'local' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
-                color: clockMode === 'local' ? '#000' : 'rgba(255,255,255,0.7)',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              title="Show Local Time"
-            >
-              Local
-            </button>
-            <button
-              onClick={() => setClockMode('gmt')}
-              style={{
-                border: 'none',
-                background: clockMode === 'gmt' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
-                color: clockMode === 'gmt' ? '#000' : 'rgba(255,255,255,0.7)',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              title="Show GMT (UTC) Time"
-            >
-              GMT
-            </button>
-            <button
-              onClick={() => setClockMode('both')}
-              style={{
-                border: 'none',
-                background: clockMode === 'both' ? 'var(--accent-cyan, #00f2fe)' : 'transparent',
-                color: clockMode === 'both' ? '#000' : 'rgba(255,255,255,0.7)',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease'
-              }}
-              title="Show Both Local & GMT Time"
-            >
-              Dual
-            </button>
-          </div>
-
-          {/* Constant Digital Clock Display */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'monospace', fontSize: '0.84rem', letterSpacing: '0.04em' }}>
-            {(clockMode === 'local' || clockMode === 'both') && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#00f2fe' }}>
-                <Clock size={13} style={{ color: '#00f2fe' }} />
-                <span>{localTimeString}</span>
-                <span style={{ fontSize: '0.7rem', color: 'rgba(0, 242, 254, 0.7)' }}>({localTz})</span>
-              </span>
-            )}
-            {clockMode === 'both' && (
-              <span style={{ color: 'rgba(255,255,255,0.25)' }}>|</span>
-            )}
-            {(clockMode === 'gmt' || clockMode === 'both') && (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#a78bfa' }}>
-                <Globe size={13} style={{ color: '#a78bfa' }} />
-                <span>{gmtTimeString}</span>
-              </span>
-            )}
-          </div>
+          <Clock size={14} style={{ color: '#00f2fe' }} />
+          <span>{localTimeString}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1311,19 +1243,6 @@ export default function CallModal({
                   border: '1px solid rgba(0, 242, 254, 0.22)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                    <span style={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      color: '#00f2fe',
-                      background: 'rgba(0, 0, 0, 0.45)',
-                      padding: '3px 7px',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(0, 242, 254, 0.25)',
-                      flexShrink: 0
-                    }} title="Participant Local Time">
-                      {myLocalTime}
-                    </span>
                     <div style={{
                       width: '28px',
                       height: '28px',
@@ -1341,6 +1260,19 @@ export default function CallModal({
                     </div>
                     <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {myName} (You)
+                    </span>
+                    <span style={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#00f2fe',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      padding: '3px 7px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      flexShrink: 0
+                    }} title="Participant Local Time">
+                      {myLocalTime}
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
@@ -1370,19 +1302,6 @@ export default function CallModal({
                   border: '1px solid rgba(255, 255, 255, 0.08)'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                    <span style={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      color: '#00f2fe',
-                      background: 'rgba(0, 0, 0, 0.45)',
-                      padding: '3px 7px',
-                      borderRadius: '8px',
-                      border: '1px solid rgba(0, 242, 254, 0.25)',
-                      flexShrink: 0
-                    }} title="Participant Local Time">
-                      {pLocalTime}
-                    </span>
                     <div style={{
                       width: '28px',
                       height: '28px',
@@ -1400,6 +1319,19 @@ export default function CallModal({
                     </div>
                     <span style={{ fontSize: '0.84rem', fontWeight: 600, color: '#e2e8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {pName}
+                    </span>
+                    <span style={{
+                      fontFamily: 'monospace',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: '#00f2fe',
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      padding: '3px 7px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(0, 242, 254, 0.25)',
+                      flexShrink: 0
+                    }} title="Participant Local Time">
+                      {pLocalTime}
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
